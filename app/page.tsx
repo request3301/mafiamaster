@@ -7,6 +7,8 @@ type Stage =
   | "appDeal"
   | "manualDeal"
   | "dealReady"
+  | "agreement"
+  | "freeSeating"
   | "speech"
   | "vote"
   | "tieSpeech"
@@ -51,7 +53,7 @@ type GameSnapshot = {
   dealIndex: number;
   appViewedCount: number;
   roleRevealed: boolean;
-  manualRoleSelection: Role | null;
+  masterSummaryVisible: boolean;
   day: number;
   round: number;
   roundStarter: number;
@@ -59,6 +61,7 @@ type GameSnapshot = {
   selectedSeat: number;
   spokenSeats: number[];
   seconds: number;
+  running: boolean;
   voteState: VoteState;
   tieSeats: number[];
   tieSpeechIndex: number;
@@ -105,6 +108,12 @@ const roleClassNames: Record<Role, string> = {
   Дон: "don",
   Шериф: "sheriff",
 };
+const roleSymbols: Record<Role, string> = {
+  Мирный: "♥",
+  Мафия: "🔫",
+  Дон: "🎩",
+  Шериф: "★",
+};
 const roleOptions: Role[] = ["Мирный", "Мафия", "Дон", "Шериф"];
 
 const emptyVoteState: VoteState = {
@@ -133,6 +142,28 @@ function FoulMarks({ count }: { count: number }) {
     <span className="foul-marks" aria-label={`Фолов: ${count}`}>
       {[0, 1, 2, 3].map((mark) => <span key={mark} className={mark < count ? "is-filled" : ""} />)}
     </span>
+  );
+}
+
+function RoleGlyph({ role, className = "" }: { role: Role; className?: string }) {
+  return <span className={`role-glyph role-${roleClassNames[role]} ${className}`} aria-label={role}>{roleSymbols[role]}</span>;
+}
+
+function RoleMiniMap({ players, currentSeat, title = "Карта ролей" }: { players: Player[]; currentSeat?: number; title?: string }) {
+  return (
+    <section className="role-mini-map" aria-label={title}>
+      <div className="mini-map-core"><span>M</span><small>{title}</small></div>
+      {players.map((player) => (
+        <div
+          key={player.seat}
+          className={`mini-role-seat mini-seat-${player.seat} ${player.role ? `has-role role-${roleClassNames[player.role]}` : ""} ${currentSeat === player.seat ? "is-current" : ""}`}
+          aria-label={`Игрок №${player.seat}${player.role ? `, ${player.role}` : ", роль не внесена"}`}
+        >
+          <b>{player.seat}</b>
+          <span aria-hidden="true">{player.role ? roleSymbols[player.role] : "·"}</span>
+        </div>
+      ))}
+    </section>
   );
 }
 
@@ -171,6 +202,11 @@ function leadersFor(candidates: number[], votes: VoteMap) {
   return candidates.filter((seat) => (votes[seat]?.length ?? 0) === maximum);
 }
 
+function roleForCheckResult(result: "Шериф" | "Не шериф" | "Мафия" | "Мирный"): Role | null {
+  if (result === "Шериф" || result === "Мафия" || result === "Мирный") return result;
+  return null;
+}
+
 export default function Home() {
   const [players, setPlayers] = useState(initialPlayers);
   const [stage, setStage] = useState<Stage>("dealChoice");
@@ -178,7 +214,7 @@ export default function Home() {
   const [dealIndex, setDealIndex] = useState(0);
   const [appViewedCount, setAppViewedCount] = useState(0);
   const [roleRevealed, setRoleRevealed] = useState(false);
-  const [manualRoleSelection, setManualRoleSelection] = useState<Role | null>(null);
+  const [masterSummaryVisible, setMasterSummaryVisible] = useState(false);
   const [day, setDay] = useState(1);
   const [round, setRound] = useState(1);
   const [roundStarter, setRoundStarter] = useState(1);
@@ -198,6 +234,7 @@ export default function Home() {
   const [history, setHistory] = useState<UndoEntry[]>([]);
   const [toast, setToast] = useState<string | null>(null);
   const deadlineRef = useRef(0);
+  const manualAssignLockRef = useRef(false);
 
   const selectedPlayer = players.find((player) => player.seat === selectedSeat) ?? players[0];
   const currentPlayer = players.find((player) => player.seat === currentSeat) ?? players[0];
@@ -213,9 +250,8 @@ export default function Home() {
   const isLastSpeech = nextSpeechSeat === null;
   const currentCandidate = voteState.candidates[voteState.index] ?? null;
   const lockedVoters = Object.values(voteState.confirmed).flat();
-  const majority = Math.floor(voteState.eligible.length / 2) + 1;
-  const isTimedStage = stage === "speech" || stage === "tieSpeech";
-  const timerLimit = stage === "tieSpeech" ? 30 : 60;
+  const isTimedStage = stage === "agreement" || stage === "freeSeating" || stage === "speech" || stage === "tieSpeech";
+  const timerLimit = stage === "freeSeating" ? 40 : stage === "tieSpeech" ? 30 : 60;
   const timerProgress = Math.max(0, Math.min(100, (seconds / Math.max(timerLimit, seconds)) * 100));
   const isWarning = isTimedStage && seconds <= 10;
   const don = players.find((player) => player.alive && player.role === "Дон");
@@ -227,6 +263,8 @@ export default function Home() {
   const currentCheckResult = stage === "nightDon"
     ? targetRole === "Шериф" ? "Шериф" : "Не шериф"
     : targetRole === "Мафия" || targetRole === "Дон" ? "Мафия" : "Мирный";
+  const currentCheckRole = roleForCheckResult(currentCheckResult);
+  const currentCheckClass = currentCheckRole ? `role-${roleClassNames[currentCheckRole]}` : "is-neutral";
   const assignedRoleCounts = standardRoles.reduce<Record<Role, number>>((counts, role) => {
     counts[role] = players.filter((player) => player.role === role).length;
     return counts;
@@ -239,7 +277,7 @@ export default function Home() {
     dealIndex,
     appViewedCount,
     roleRevealed,
-    manualRoleSelection,
+    masterSummaryVisible,
     day,
     round,
     roundStarter,
@@ -247,6 +285,7 @@ export default function Home() {
     selectedSeat,
     spokenSeats,
     seconds,
+    running,
     voteState,
     tieSeats,
     tieSpeechIndex,
@@ -256,6 +295,12 @@ export default function Home() {
     nightRecords,
     eventLog,
   });
+
+  const startCountdown = (value: number) => {
+    deadlineRef.current = Date.now() + value * 1000;
+    setSeconds(value);
+    setRunning(true);
+  };
 
   useEffect(() => {
     if (!running) return;
@@ -268,6 +313,10 @@ export default function Home() {
     const interval = window.setInterval(tick, 150);
     return () => window.clearInterval(interval);
   }, [running]);
+
+  useEffect(() => {
+    manualAssignLockRef.current = false;
+  }, [dealIndex, stage]);
 
   const remember = (label: string) => {
     const entry = { label, snapshot: captureSnapshot() };
@@ -283,7 +332,7 @@ export default function Home() {
     setDealIndex(snapshot.dealIndex);
     setAppViewedCount(snapshot.appViewedCount);
     setRoleRevealed(snapshot.roleRevealed);
-    setManualRoleSelection(snapshot.manualRoleSelection);
+    setMasterSummaryVisible(snapshot.masterSummaryVisible);
     setDay(snapshot.day);
     setRound(snapshot.round);
     setRoundStarter(snapshot.roundStarter);
@@ -299,7 +348,12 @@ export default function Home() {
     setNightShotChoice(snapshot.nightShotChoice);
     setNightRecords(snapshot.nightRecords);
     setEventLog(snapshot.eventLog);
-    setRunning(false);
+    if (snapshot.running && snapshot.seconds > 0) {
+      deadlineRef.current = Date.now() + snapshot.seconds * 1000;
+      setRunning(true);
+    } else {
+      setRunning(false);
+    }
   };
 
   const undo = () => {
@@ -320,14 +374,11 @@ export default function Home() {
       return;
     }
     if (stage === "manualDeal") {
-      if (manualRoleSelection) {
-        setManualRoleSelection(null);
-      } else if (dealIndex > 0) {
+      if (dealIndex > 0) {
         const previousIndex = dealIndex - 1;
-        const previousRole = players[previousIndex].role;
         setPlayers((current) => current.map((player, index) => index === previousIndex ? { ...player, role: null } : player));
         setDealIndex(previousIndex);
-        setManualRoleSelection(previousRole);
+        setToast(`Роль игрока №${previousIndex + 1} отменена`);
       } else {
         setPlayers(initialPlayers);
         setDealMethod(null);
@@ -337,16 +388,32 @@ export default function Home() {
     }
     if (stage === "dealReady") {
       if (dealMethod === "app") {
+        if (masterSummaryVisible) {
+          setMasterSummaryVisible(false);
+          setToast("Карта ролей снова скрыта");
+          return;
+        }
         setStage("appDeal");
         setDealIndex(9);
         setRoleRevealed(false);
       } else {
-        const previousRole = players[9].role;
         setPlayers((current) => current.map((player, index) => index === 9 ? { ...player, role: null } : player));
         setDealIndex(9);
-        setManualRoleSelection(previousRole);
         setStage("manualDeal");
       }
+      return;
+    }
+    if (stage === "agreement") {
+      setRunning(false);
+      setSeconds(60);
+      setStage("dealReady");
+      return;
+    }
+    if (stage === "freeSeating") {
+      setRunning(false);
+      setSeconds(0);
+      setStage("agreement");
+      setToast("Возврат к завершённой договорке");
       return;
     }
     if (stage === "nightShot" && nightShotChoice !== null) {
@@ -380,7 +447,7 @@ export default function Home() {
     setDealIndex(0);
     setAppViewedCount(0);
     setRoleRevealed(false);
-    setManualRoleSelection(null);
+    setMasterSummaryVisible(false);
     setStage("appDeal");
     setToast("Передайте телефон игроку №1");
   };
@@ -391,7 +458,7 @@ export default function Home() {
     setDealIndex(0);
     setAppViewedCount(0);
     setRoleRevealed(false);
-    setManualRoleSelection(null);
+    setMasterSummaryVisible(true);
     setStage("manualDeal");
     setToast("Введите роль игрока №1");
   };
@@ -407,20 +474,21 @@ export default function Home() {
       setDealIndex((current) => current + 1);
       setToast(`Роль скрыта · передайте телефон игроку №${dealIndex + 2}`);
     } else {
+      setMasterSummaryVisible(false);
       setStage("dealReady");
       setToast("Все 10 ролей розданы · верните телефон ведущему");
     }
   };
 
-  const confirmManualRole = () => {
-    if (!manualRoleSelection) return;
-    const assignedRole = manualRoleSelection;
+  const assignManualRole = (assignedRole: Role) => {
+    if (manualAssignLockRef.current || assignedRoleCounts[assignedRole] >= roleLimits[assignedRole]) return;
+    manualAssignLockRef.current = true;
     setPlayers((current) => current.map((player, index) => index === dealIndex ? { ...player, role: assignedRole } : player));
-    setManualRoleSelection(null);
     if (dealIndex < players.length - 1) {
       setDealIndex((current) => current + 1);
-      setToast(`Роль игрока №${dealIndex + 1} записана · дальше №${dealIndex + 2}`);
+      setToast(`№${dealIndex + 1} · ${assignedRole} · дальше игрок №${dealIndex + 2}`);
     } else {
+      setMasterSummaryVisible(true);
       setStage("dealReady");
       setToast("Все роли внесены · состав готов");
     }
@@ -442,15 +510,13 @@ export default function Home() {
       nominatedBy: null,
       alive: true,
     })));
-    setStage("speech");
+    setStage("agreement");
     setDay(1);
     setRound(1);
     setRoundStarter(1);
     setCurrentSeat(1);
     setSelectedSeat(1);
     setSpokenSeats([]);
-    setSeconds(60);
-    setRunning(false);
     setVoteState(emptyVoteState);
     setTieSeats([]);
     setTieSpeechIndex(0);
@@ -458,9 +524,27 @@ export default function Home() {
     setNightTarget(1);
     setNightShotChoice(null);
     setNightRecords([]);
-    setEventLog(["Круг 1 начался с игрока №1"]);
+    setEventLog(["Первая ночь · договорка 60 секунд"]);
     setHistory([]);
-    setToast("Роли готовы · речь начинает игрок №1");
+    startCountdown(60);
+    setToast("Просыпается мафия · договорка началась");
+  };
+
+  const beginFreeSeating = () => {
+    setStage("freeSeating");
+    startCountdown(40);
+    addLog("Свободная посадка · 40 секунд");
+    setToast("Мафия засыпает · свободная посадка");
+  };
+
+  const beginFirstSpeech = () => {
+    remember("начало утра");
+    setStage("speech");
+    setCurrentSeat(1);
+    setSpokenSeats([]);
+    startCountdown(60);
+    addLog("Утро · круг 1 начинает игрок №1");
+    setToast("В городе утро · таймер игрока №1 запущен");
   };
 
   const toggleTimer = () => {
@@ -570,10 +654,9 @@ export default function Home() {
     setSpokenSeats(nextSpoken);
     if (next) {
       setCurrentSeat(next);
-      setSelectedSeat(next);
-      setSeconds(60);
+      startCountdown(60);
       addLog(`Началась речь игрока №${next}`);
-      setToast(`Следующий игрок №${next} · таймер готов`);
+      setToast(`Следующий игрок №${next} · таймер запущен`);
     } else {
       beginVoting();
     }
@@ -628,9 +711,7 @@ export default function Home() {
       setTieSeats(leaders);
       setTieSpeechIndex(0);
       setCurrentSeat(leaders[0]);
-      setSelectedSeat(leaders[0]);
-      setSeconds(30);
-      setRunning(false);
+      startCountdown(30);
       setStage("tieSpeech");
       setToast(`Попил: ${leaders.map((seat) => `№${seat}`).join(" и ")} · по 30 секунд`);
     } else {
@@ -647,8 +728,7 @@ export default function Home() {
       const next = tieSeats[nextIndex];
       setTieSpeechIndex(nextIndex);
       setCurrentSeat(next);
-      setSelectedSeat(next);
-      setSeconds(30);
+      startCountdown(30);
       setToast(`Следующая речь попила: игрок №${next}`);
     } else {
       setVoteState({
@@ -769,10 +849,8 @@ export default function Home() {
     setRound((current) => current + 1);
     setRoundStarter(nextStarter);
     setCurrentSeat(nextStarter);
-    setSelectedSeat(nextStarter);
     setSpokenSeats([]);
-    setSeconds(60);
-    setRunning(false);
+    startCountdown(60);
     setVoteState(emptyVoteState);
     setTieSeats([]);
     setLiftDraft([]);
@@ -781,7 +859,7 @@ export default function Home() {
     setStage("speech");
     const message = `Круг ${round + 1} начинается с игрока №${nextStarter}`;
     addLog(message);
-    setToast(message);
+    setToast(`${message} · таймер запущен`);
   };
 
   const handleSeatClick = (seat: number) => {
@@ -805,7 +883,7 @@ export default function Home() {
     }
   };
 
-  const isDealStage = stage === "dealChoice" || stage === "appDeal" || stage === "manualDeal" || stage === "dealReady";
+  const isDealStage = stage === "dealChoice" || stage === "appDeal" || stage === "manualDeal" || stage === "dealReady" || stage === "agreement" || stage === "freeSeating";
   const undoAvailable = isDealStage
     ? stage !== "dealChoice"
     : history.length > 0
@@ -820,18 +898,22 @@ export default function Home() {
       ? "Подготовка партии"
       : stage === "dealReady"
         ? "Роли готовы"
-        : `Игрок ${dealIndex + 1} из 10`;
-    const setupNote = stage === "appDeal" ? "Приватный просмотр" : stage === "manualDeal" ? "Ввод с колоды" : "Стандартная десятка";
+        : stage === "agreement"
+          ? "Договорка"
+          : stage === "freeSeating"
+            ? "Свободная посадка"
+            : `Игрок ${dealIndex + 1} из 10`;
+    const setupNote = stage === "appDeal" ? "Приватный просмотр" : stage === "manualDeal" ? "Ввод с колоды" : stage === "agreement" ? "60 секунд" : stage === "freeSeating" ? "40 секунд" : "Стандартная десятка";
 
     return (
       <main className="app-shell">
-        <section className={`game-app deal-app stage-${stage}`} aria-label="Раздача ролей Mafia Master">
+        <section className={`game-app deal-app stage-${stage} ${isWarning ? "is-warning" : ""}`} aria-label="Раздача ролей Mafia Master">
           <header className="game-header">
             <div className="header-main">
               <button className="undo-button" onClick={undo} disabled={!undoAvailable} aria-label="Вернуться назад">
                 <span>↶</span>Назад
               </button>
-              <div className="game-heading"><span>MAFIA MASTER · НОВАЯ ИГРА</span><strong>Раздача ролей</strong></div>
+              <div className="game-heading"><span>MAFIA MASTER · НОВАЯ ИГРА</span><strong>{stage === "agreement" || stage === "freeSeating" ? "Первая ночь" : "Раздача ролей"}</strong></div>
               <div className="app-brand">M</div>
             </div>
             <div className="stage-status deal-status" aria-live="polite">
@@ -849,7 +931,7 @@ export default function Home() {
                 <p>Выберите один способ. После раздачи приложение само поведёт ведущего по всей партии.</p>
               </div>
               <div className="role-composition" aria-label="Состав ролей">
-                <span><b>6</b> мирных</span><span><b>2</b> мафии</span><span><b>1</b> Дон</span><span><b>1</b> Шериф</span>
+                {roleOptions.map((role) => <span key={role} className={`role-${roleClassNames[role]}`}><RoleGlyph role={role} /><b>{roleLimits[role]}</b><small>{role}</small></span>)}
               </div>
               <div className="deal-methods">
                 <button onClick={beginAppDeal}>
@@ -878,7 +960,7 @@ export default function Home() {
               <div className={`private-role-card ${roleRevealed && dealRole ? `is-revealed role-${roleClassNames[dealRole]}` : ""}`}>
                 <div className="card-corner">M</div>
                 {roleRevealed && dealRole ? (
-                  <div className="revealed-role"><span>Ваша роль</span><strong>{dealRole}</strong><p>{roleDescriptions[dealRole]}</p></div>
+                  <div className="revealed-role"><span>Ваша роль</span><RoleGlyph role={dealRole} className="card-role-glyph" /><strong>{dealRole}</strong><p>{roleDescriptions[dealRole]}</p></div>
                 ) : (
                   <div className="hidden-role"><span>?</span><strong>Роль скрыта</strong><p>Нажмите кнопку, когда экран видит только игрок №{dealPlayer.seat}</p></div>
                 )}
@@ -897,44 +979,77 @@ export default function Home() {
               <div className="handoff-copy">
                 <span>Карта из колоды</span>
                 <h2>Игрок №{dealPlayer.seat}</h2>
-                <p>Какую роль получил игрок? Приложение проследит за правильным составом.</p>
+                <p>Тап по роли сразу сохранит её и откроет следующего игрока.</p>
               </div>
+              <RoleMiniMap players={players} currentSeat={dealPlayer.seat} title="Роли за столом" />
               <div className="role-grid">
                 {roleOptions.map((role) => {
                   const remaining = roleLimits[role] - assignedRoleCounts[role];
-                  const isSelected = manualRoleSelection === role;
                   return (
                     <button
                       key={role}
-                      className={`role-option role-${roleClassNames[role]} ${isSelected ? "is-selected" : ""}`}
-                      onClick={() => setManualRoleSelection(role)}
-                      disabled={remaining <= 0 && !isSelected}
+                      className={`role-option role-${roleClassNames[role]}`}
+                      onClick={() => assignManualRole(role)}
+                      disabled={remaining <= 0}
                     >
-                      <span>{role === "Мирный" ? "○" : role === "Мафия" ? "●" : role === "Дон" ? "♛" : "✦"}</span>
+                      <RoleGlyph role={role} />
                       <strong>{role}</strong>
                       <small>{remaining > 0 ? `осталось ${remaining}` : "все назначены"}</small>
                     </button>
                   );
                 })}
               </div>
-              <div className="manual-balance">{roleOptions.map((role) => <span key={role} className={assignedRoleCounts[role] === roleLimits[role] ? "is-full" : ""}><b>{assignedRoleCounts[role]}</b>/{roleLimits[role]} {role}</span>)}</div>
-              <button className="primary-action deal-primary" onClick={confirmManualRole} disabled={!manualRoleSelection}>
-                <span><small>{manualRoleSelection ? `Игрок №${dealPlayer.seat} · ${manualRoleSelection}` : "Сначала выберите роль"}</small>{manualRoleSelection ? dealIndex < 9 ? `Записать · дальше №${dealIndex + 2}` : "Записать последнюю роль" : "Выберите роль игрока"}</span>
-                <strong>→</strong>
-              </button>
+              <div className="manual-balance">{roleOptions.map((role) => <span key={role} className={`role-${roleClassNames[role]} ${assignedRoleCounts[role] === roleLimits[role] ? "is-full" : ""}`}><b>{assignedRoleCounts[role]}</b>/{roleLimits[role]} {role}</span>)}</div>
             </section>
           )}
 
           {stage === "dealReady" && (
             <section className="deal-panel deal-ready">
-              <div className="ready-seal"><span>✓</span></div>
-              <span className="deal-eyebrow">Раздача завершена</span>
-              <h1>Все роли готовы</h1>
-              <p>{dealMethod === "app" ? "Все десять игроков посмотрели свои роли. Верните телефон ведущему." : "Ведущий внёс все карты. Состав проверен и готов к игре."}</p>
-              <div className="ready-composition"><div><strong>6</strong><span>мирных</span></div><div><strong>2</strong><span>мафии</span></div><div><strong>1</strong><span>Дон</span></div><div><strong>1</strong><span>Шериф</span></div></div>
-              <div className="first-speaker"><span>Первую речь начинает</span><strong>Игрок №1</strong><small>дальше — только по часовой стрелке</small></div>
-              <button className="primary-action deal-primary" onClick={startGame}>
-                <span><small>Раздача закроется и роли останутся у ведущего</small>Начать игру · речь №1</span><strong>→</strong>
+              {dealMethod === "app" && !masterSummaryVisible ? (
+                <>
+                  <div className="ready-seal"><span>✓</span></div>
+                  <span className="deal-eyebrow">Раздача завершена</span>
+                  <h1>Верните телефон ведущему</h1>
+                  <p>На следующем экране будет полная карта ролей. Игроки больше не смотрят.</p>
+                  <button className="primary-action deal-primary master-unlock" onClick={() => setMasterSummaryVisible(true)}>
+                    <span><small>Только для ведущего</small>Я ведущий · открыть карту ролей</span><strong>→</strong>
+                  </button>
+                </>
+              ) : (
+                <>
+                  <span className="deal-eyebrow">Раздача завершена</span>
+                  <h1>Карта ролей готова</h1>
+                  <p>Эту схему видит только ведущий. Цвет и знак роли используются дальше во всех проверках.</p>
+                  <RoleMiniMap players={players} title="Все роли" />
+                  <div className="ready-composition">{roleOptions.map((role) => <div key={role} className={`role-${roleClassNames[role]}`}><RoleGlyph role={role} /><strong>{roleLimits[role]}</strong><span>{role}</span></div>)}</div>
+                  <div className="first-speaker"><span>Первая ночь</span><strong>Договорка · 60 секунд</strong><small>затем свободная посадка · 40 секунд</small></div>
+                  <button className="primary-action deal-primary" onClick={startGame}>
+                    <span><small>Мафия просыпается, таймер включится сразу</small>Начать договорку · 60</span><strong>→</strong>
+                  </button>
+                </>
+              )}
+            </section>
+          )}
+
+          {(stage === "agreement" || stage === "freeSeating") && (
+            <section className="deal-panel preparation-timer">
+              <div className="prep-copy">
+                <span>{stage === "agreement" ? "Первая ночь" : "После договорки"}</span>
+                <h1>{stage === "agreement" ? "Договорка" : "Свободная посадка"}</h1>
+                <p>{stage === "agreement" ? "Просыпаются Дон и мафия. У команды 60 секунд на бесшумный план игры." : "Мафия спит. Дон и Шериф обозначаются ведущему, затем игроки принимают удобную посадку на 40 секунд."}</p>
+              </div>
+              <RoleMiniMap players={players} title={stage === "agreement" ? "Карта ведущего" : "Роли за столом"} />
+              <button
+                className="timer-orbit prep-timer-orbit"
+                onClick={toggleTimer}
+                style={{ background: `conic-gradient(var(--timer-accent) ${Math.max(0, Math.min(100, (seconds / timerLimit) * 100))}%, rgba(255,255,255,.075) 0)` }}
+                aria-label={`${running ? "Поставить на паузу" : "Продолжить"} таймер`}
+              >
+                <span className="timer-face"><time aria-live={seconds <= 10 ? "assertive" : "off"}>{seconds}</time><small>секунд · {seconds === 0 ? "время вышло" : running ? "таймер идёт" : "пауза"}</small></span>
+              </button>
+              <button className="timer-reset prep-reset" onClick={resetTimer}>↺ Сбросить</button>
+              <button className="primary-action deal-primary" onClick={stage === "agreement" ? beginFreeSeating : beginFirstSpeech} disabled={seconds > 0}>
+                <span><small>{seconds > 0 ? "Дождитесь окончания отсчёта" : "Следующий таймер запустится автоматически"}</small>{stage === "agreement" ? "Свободная посадка · 40" : "В городе утро · речь №1"}</span><strong>→</strong>
               </button>
             </section>
           )}
@@ -1067,7 +1182,11 @@ export default function Home() {
             ) : stage === "nightShot" ? (
               <div className="workflow-center night-shot-choice"><span>Результат отстрела</span><strong>{nightShotChoice === "miss" ? "ПРОМАХ" : typeof nightShotChoice === "number" ? `№${nightShotChoice}` : "—"}</strong><small>выберите игрока на столе или промах</small></div>
             ) : (
-              <div className={`workflow-center check-result ${currentCheckResult === "Мафия" ? "is-mafia" : currentCheckResult === "Шериф" ? "is-sheriff" : "is-clear"}`}><span>{stage === "nightDon" ? "Дон проверяет Шерифа" : "Шериф проверяет мафию"} · №{nightTarget}</span><strong>{currentCheckResult.toUpperCase()}</strong><small>тапните другого игрока, чтобы изменить цель</small></div>
+              <div className={`workflow-center check-result ${currentCheckClass}`}>
+                <span>{stage === "nightDon" ? "Дон проверяет Шерифа" : "Шериф проверяет мафию"} · №{nightTarget}</span>
+                <div className="check-result-value">{currentCheckRole && <RoleGlyph role={currentCheckRole} />}<strong>{currentCheckResult.toUpperCase()}</strong></div>
+                <small>тапните другого игрока, чтобы изменить цель</small>
+              </div>
             )}
           </div>
 
@@ -1139,8 +1258,11 @@ export default function Home() {
           {stage === "tieSpeech" && <div className="simple-instruction"><span>Попил</span><strong>Игрок №{currentSeat} получает 30 секунд</strong><small>Следующий этап приложение выберет автоматически</small></div>}
           {stage === "lift" && <div className="simple-instruction"><span>Финальное голосование</span><strong>Кто за подъём {tieSeats.map((seat) => `№${seat}`).join(" и ")}?</strong><small>Тапните номера голосующих «за». Остальные считаются «против».</small></div>}
           {stage === "nightShot" && <div className="shot-control"><div><span>Отстрел</span><strong>{typeof nightShotChoice === "number" ? `Выбран игрок №${nightShotChoice}` : nightShotChoice === "miss" ? "Выбран промах" : "Коснитесь игрока на столе"}</strong><small>Номер стрелявшего не нужен — фиксируется только результат.</small></div><button className={nightShotChoice === "miss" ? "is-selected" : ""} onClick={() => setNightShotChoice("miss")}><span>×</span><strong>Промах</strong></button></div>}
-          {(stage === "nightDon" || stage === "nightSheriff") && <div className={`check-instruction ${currentCheckResult === "Мафия" ? "is-mafia" : currentCheckResult === "Шериф" ? "is-sheriff" : "is-clear"}`}><span>{stage === "nightDon" ? "Проверка Дона" : "Проверка Шерифа"}</span><div><small>Игрок №{nightTarget}</small><strong>{currentCheckResult.toUpperCase()}</strong></div><p>{stage === "nightDon" ? "Приложение показывает: Шериф или не Шериф" : "Приложение показывает: Мафия или Мирный"}</p></div>}
-          {stage === "nightSummary" && <div className="night-summary"><span>Ночь записана</span>{nightRecords.map((record, index) => <div key={`${record.type}-${record.target ?? "miss"}-${index}`}><strong>{record.type === "shot" ? "Отстрел" : record.type === "don" ? "Проверка Дона" : "Проверка Шерифа"}</strong><span>{record.type === "shot" ? record.target ? `игрок №${record.target}` : "промах" : `№${record.target} · ${record.result.toUpperCase()}`}</span></div>)}<div className="night-outcome"><strong>Утром</strong><span>{shotResult ? `выбывает №${shotResult}` : "никто не выбывает"}</span></div></div>}
+          {(stage === "nightDon" || stage === "nightSheriff") && <div className={`check-instruction ${currentCheckClass}`}><span>{stage === "nightDon" ? "Проверка Дона" : "Проверка Шерифа"}</span><div><small>Игрок №{nightTarget}</small><span className="check-result-value">{currentCheckRole && <RoleGlyph role={currentCheckRole} />}<strong>{currentCheckResult.toUpperCase()}</strong></span></div><p>{stage === "nightDon" ? "Приложение показывает: Шериф или не Шериф" : "Приложение показывает: Мафия или Мирный"}</p></div>}
+          {stage === "nightSummary" && <div className="night-summary"><span>Ночь записана</span>{nightRecords.map((record, index) => {
+            const resultRole = record.type === "shot" ? null : roleForCheckResult(record.result);
+            return <div key={`${record.type}-${record.target ?? "miss"}-${index}`} className={resultRole ? `role-${roleClassNames[resultRole]}` : ""}><strong>{record.type === "shot" ? "Отстрел" : record.type === "don" ? "Проверка Дона" : "Проверка Шерифа"}</strong><span className="night-record-value">{resultRole && <RoleGlyph role={resultRole} />}{record.type === "shot" ? record.target ? `игрок №${record.target}` : "промах" : `№${record.target} · ${record.result.toUpperCase()}`}</span></div>;
+          })}<div className="night-outcome"><strong>Утром</strong><span>{shotResult ? `выбывает №${shotResult}` : "никто не выбывает"}</span></div></div>}
 
           <button className="primary-action" onClick={onPrimary} disabled={primaryDisabled}>
             <span><small>{stage === "speech" ? "Речи идут по часовой стрелке" : stage === "vote" || stage === "revote" ? `${voteState.draft.length} ${voteWord(voteState.draft.length)} будет зафиксировано` : "Следующий этап откроется автоматически"}</small>{primaryLabel}</span>
