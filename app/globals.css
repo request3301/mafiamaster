@@ -23,13 +23,16 @@
 
 html {
   min-width: 320px;
+  height: var(--tg-viewport-stable-height, 100svh);
   background: #090b08;
 }
 
 body {
   margin: 0;
   min-width: 320px;
-  min-height: 100svh;
+  height: var(--tg-viewport-stable-height, 100svh);
+  min-height: 0;
+  overflow: hidden;
   color: var(--app-text);
   background: #090b08;
   font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -50,7 +53,9 @@ button:focus-visible {
 
 .app-shell {
   display: grid;
-  min-height: var(--tg-viewport-stable-height, 100svh);
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
   place-items: center;
   background:
     radial-gradient(circle at 50% 18%, rgba(117, 137, 70, 0.19), transparent 31%),
@@ -61,8 +66,11 @@ button:focus-visible {
 .game-app {
   position: relative;
   width: min(100%, 460px);
-  min-height: var(--tg-viewport-stable-height, 100svh);
-  overflow: hidden auto;
+  height: 100%;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
   padding:
     calc(14px + var(--tg-content-safe-area-inset-top, env(safe-area-inset-top, 0px)))
     calc(12px + var(--tg-content-safe-area-inset-right, env(safe-area-inset-right, 0px)))
@@ -1368,8 +1376,10 @@ button:focus-visible {
 .deal-panel {
   display: grid;
   flex: 1;
+  min-height: 0;
   align-content: center;
   gap: 14px;
+  overflow: hidden auto;
   padding: 22px 3px 4px;
 }
 
@@ -2250,8 +2260,8 @@ button:focus-visible {
   }
 
   .game-app {
-    height: min(920px, calc(100svh - 32px));
-    min-height: 700px;
+    height: min(920px, calc(var(--tg-viewport-stable-height, 100svh) - 32px));
+    min-height: 0;
     border: 1px solid rgba(239, 231, 200, 0.12);
     border-radius: 32px;
     box-shadow: 0 44px 120px rgba(0, 0, 0, 0.52), inset 0 1px rgba(255, 255, 255, 0.04);
@@ -2307,13 +2317,397 @@ button:focus-visible {
   }
 }
 
-@media (max-height: 720px) {
+@media (max-height: 820px) {
+  .game-app {
+    padding-top: calc(8px + var(--tg-content-safe-area-inset-top, env(safe-area-inset-top, 0px)));
+    padding-bottom: calc(8px + var(--tg-content-safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
+  }
+
+  .stage-status {
+    min-height: 40px;
+    margin-top: 5px;
+    padding: 5px 8px;
+  }
+
   .table-stage {
-    height: 375px;
+    height: clamp(270px, calc(100dvh - 360px), 330px);
+    margin-top: 0;
+  }
+
+  .stage-vote .table-stage,
+  .stage-revote .table-stage,
+  .stage-lift .table-stage,
+  .stage-nightShot .table-stage,
+  .stage-nightDon .table-stage,
+  .stage-nightSheriff .table-stage,
+  .stage-nightSummary .table-stage {
+    height: clamp(255px, calc(100dvh - 350px), 315px);
+  }
+
+  .table-seat {
+    width: 52px;
+    min-height: 52px;
+    border-radius: 14px;
+  }
+
+  .table-seat strong {
+    font-size: 21px;
   }
 
   .seat-name {
     display: none;
+  }
+
+  .timer-orbit {
+    width: 104px;
+  }
+
+  .timer-face time {
+    font-size: 34px;
+  }
+
+  .candidate-queue {
+    min-height: 40px;
+    gap: 8px;
+    padding: 3px 7px;
+  }
+
+  .candidate-queue li {
+    width: 30px;
+    min-width: 30px;
+    height: 30px;
+    border-radius: 9px;
+  }
+
+  .control-panel {
+    margin-top: 4px;
+    padding: 8px;
+    border-radius: 16px;
+  }
+
+  .selected-player {
+    grid-template-columns: 34px 1fr auto;
+    gap: 7px;
+    margin-bottom: 5px;
+  }
+
+  .selected-number {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    font-size: 19px;
+  }
+
+  .selected-fouls {
+    gap: 2px;
+  }
+
+  .quick-actions {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 5px;
+  }
+
+  .foul-stepper {
+    min-height: 44px;
+    grid-column: 1 / -1;
+    grid-template-columns: 44px 1fr 44px;
+  }
+
+  .foul-stepper > button {
+    min-height: 44px;
+  }
+
+  .quick-actions button {
+    min-height: 44px;
+    grid-template-columns: 1fr;
+    justify-items: center;
+    gap: 2px;
+    padding: 4px;
+    text-align: center;
+  }
+
+  .quick-actions button > span {
+    width: 20px;
+    height: 20px;
+  }
+
+  .quick-actions button strong {
+    line-height: 1.1;
+    white-space: normal;
+  }
+
+  .quick-actions .buy-time-action {
+    grid-column: auto;
+  }
+
+  .primary-action {
+    min-height: 48px;
+    margin-top: 6px;
+    padding: 0 13px;
+  }
+
+  .simple-instruction,
+  .night-instruction {
+    min-height: 60px;
+  }
+
+  .shot-control,
+  .check-instruction {
+    min-height: 68px;
+  }
+
+  .vote-panel {
+    gap: 4px;
+  }
+
+  .vote-legend {
+    display: none;
+  }
+
+  .deal-panel {
+    gap: 8px;
+    padding-top: 10px;
+  }
+
+  .deal-intro h1,
+  .deal-ready h1,
+  .handoff-copy h2,
+  .morning-ready h1,
+  .prep-copy h1 {
+    font-size: 29px;
+  }
+
+  .role-composition > span,
+  .ready-composition > div {
+    min-height: 58px;
+  }
+
+  .deal-methods {
+    gap: 6px;
+  }
+
+  .deal-methods > button {
+    min-height: 78px;
+    grid-template-columns: 42px 1fr 18px;
+    gap: 9px;
+    padding: 8px 10px;
+    border-radius: 15px;
+  }
+
+  .deal-methods .method-icon {
+    width: 42px;
+    height: 54px;
+    border-radius: 11px;
+    font-size: 19px;
+  }
+
+  .deal-methods strong {
+    font-size: 17px;
+  }
+
+  .private-role-card {
+    min-height: 230px;
+    padding: 20px;
+  }
+
+  .role-mini-map {
+    height: 155px;
+  }
+
+  .mini-map-core {
+    width: 126px;
+    height: 72px;
+  }
+
+  .mini-map-core > span {
+    top: calc(100% + 14px);
+    width: 26px;
+    height: 26px;
+  }
+
+  .mini-role-seat {
+    height: 35px;
+  }
+
+  .role-option {
+    min-height: 74px;
+    padding: 8px;
+  }
+
+  .prep-privacy-note {
+    min-height: 48px;
+    padding: 7px 10px;
+  }
+
+  .prep-timer-orbit {
+    width: 104px;
+  }
+
+  .ready-seal,
+  .morning-mark {
+    width: 72px;
+    height: 72px;
+  }
+
+  .ready-seal span,
+  .morning-mark span {
+    width: 42px;
+    height: 42px;
+    border-radius: 13px;
+    font-size: 23px;
+  }
+
+  .first-speaker,
+  .speech-rule-card {
+    padding: 9px;
+  }
+}
+
+@media (max-height: 720px) {
+  .game-app {
+    padding-top: calc(5px + var(--tg-content-safe-area-inset-top, env(safe-area-inset-top, 0px)));
+    padding-bottom: calc(5px + var(--tg-content-safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
+  }
+
+  .header-main {
+    grid-template-columns: 64px 1fr 34px;
+  }
+
+  .undo-button {
+    min-height: 34px;
+  }
+
+  .app-brand {
+    width: 34px;
+    height: 34px;
+    border-radius: 11px;
+    font-size: 18px;
+  }
+
+  .game-heading strong {
+    font-size: 16px;
+  }
+
+  .stage-status {
+    min-height: 36px;
+    margin-top: 3px;
+    padding: 3px 7px;
+  }
+
+  .table-stage {
+    height: clamp(245px, calc(100dvh - 345px), 295px);
+  }
+
+  .stage-vote .table-stage,
+  .stage-revote .table-stage,
+  .stage-lift .table-stage,
+  .stage-nightShot .table-stage,
+  .stage-nightDon .table-stage,
+  .stage-nightSheriff .table-stage,
+  .stage-nightSummary .table-stage {
+    height: clamp(235px, calc(100dvh - 335px), 280px);
+  }
+
+  .table-seat {
+    width: 48px;
+    min-height: 48px;
+    border-radius: 13px;
+  }
+
+  .timer-orbit {
+    width: 94px;
+  }
+
+  .timer-face time {
+    font-size: 32px;
+  }
+
+  .orientation-note,
+  .master-copy small,
+  .primary-action small,
+  .vote-summary,
+  .selected-player {
+    display: none;
+  }
+
+  .candidate-queue {
+    min-height: 36px;
+  }
+
+  .control-panel {
+    padding: 6px;
+  }
+
+  .deal-panel {
+    gap: 6px;
+    padding-top: 6px;
+  }
+
+  .deal-intro p,
+  .handoff-copy p,
+  .prep-copy p,
+  .deal-footnote {
+    display: none;
+  }
+
+  .role-composition > span,
+  .ready-composition > div {
+    min-height: 52px;
+  }
+
+  .deal-methods > button {
+    min-height: 68px;
+  }
+
+  .private-role-card {
+    min-height: 205px;
+    padding: 14px;
+  }
+
+  .hidden-role > span {
+    width: 60px;
+    height: 60px;
+    font-size: 32px;
+  }
+
+  .card-role-glyph {
+    --s: 62px;
+  }
+
+  .revealed-role strong {
+    font-size: 33px;
+  }
+
+  .role-mini-map {
+    height: 140px;
+  }
+
+  .mini-map-core > span {
+    top: calc(100% + 10px);
+    width: 24px;
+    height: 24px;
+  }
+
+  .role-option {
+    min-height: 64px;
+  }
+
+  .prep-privacy-note {
+    min-height: 42px;
+  }
+
+  .prep-privacy-note small {
+    display: none;
+  }
+
+  .prep-timer-orbit {
+    width: 94px;
+  }
+
+  .ready-seal,
+  .morning-mark {
+    width: 62px;
+    height: 62px;
   }
 }
 

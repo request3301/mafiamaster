@@ -107,6 +107,8 @@ type TelegramWebApp = {
   setHeaderColor?: (color: string) => void;
   setBackgroundColor?: (color: string) => void;
   setBottomBarColor?: (color: string) => void;
+  enableClosingConfirmation?: () => void;
+  disableClosingConfirmation?: () => void;
 };
 
 declare global {
@@ -290,6 +292,14 @@ export default function Home() {
     webApp.expand();
     webApp.ready();
   }, []);
+
+  useEffect(() => {
+    const webApp = window.Telegram?.WebApp;
+    if (!webApp) return;
+
+    if (stage === "dealChoice") webApp.disableClosingConfirmation?.();
+    else webApp.enableClosingConfirmation?.();
+  }, [stage]);
 
   const selectedPlayer = players.find((player) => player.seat === selectedSeat) ?? players[0];
   const currentPlayer = players.find((player) => player.seat === currentSeat) ?? players[0];
