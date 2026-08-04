@@ -104,6 +104,7 @@ type UndoEntry = {
 type TelegramWebApp = {
   ready: () => void;
   expand: () => void;
+  isVersionAtLeast?: (version: string) => boolean;
   setHeaderColor?: (color: string) => void;
   setBackgroundColor?: (color: string) => void;
   setBottomBarColor?: (color: string) => void;
@@ -286,9 +287,11 @@ export default function Home() {
     const webApp = window.Telegram?.WebApp;
     if (!webApp) return;
 
-    webApp.setHeaderColor?.("#090b08");
-    webApp.setBackgroundColor?.("#090b08");
-    webApp.setBottomBarColor?.("#090b08");
+    if (webApp.isVersionAtLeast?.("6.1") ?? true) {
+      webApp.setHeaderColor?.("#090b08");
+      webApp.setBackgroundColor?.("#090b08");
+    }
+    if (webApp.isVersionAtLeast?.("7.10") ?? true) webApp.setBottomBarColor?.("#090b08");
     webApp.expand();
     webApp.ready();
   }, []);
@@ -296,6 +299,7 @@ export default function Home() {
   useEffect(() => {
     const webApp = window.Telegram?.WebApp;
     if (!webApp) return;
+    if (!(webApp.isVersionAtLeast?.("6.2") ?? true)) return;
 
     if (stage === "dealChoice") webApp.disableClosingConfirmation?.();
     else webApp.enableClosingConfirmation?.();

@@ -110,7 +110,7 @@ button:focus-visible {
 
 .header-main {
   display: grid;
-  grid-template-columns: 68px 1fr 38px;
+  grid-template-columns: 68px 1fr 68px;
   align-items: center;
   gap: 9px;
 }
@@ -176,6 +176,7 @@ button:focus-visible {
   font-size: 21px;
   font-style: italic;
   font-weight: 800;
+  justify-self: end;
 }
 
 .stage-status {
@@ -223,8 +224,8 @@ button:focus-visible {
 }
 
 .table-stage {
-  height: clamp(398px, 49svh, 448px);
-  margin-top: 5px;
+  height: clamp(420px, 52svh, 470px);
+  margin-top: 12px;
 }
 
 .stage-vote .table-stage,
@@ -261,7 +262,7 @@ button:focus-visible {
 
 .table-surface {
   position: absolute;
-  top: 42%;
+  top: 44%;
   left: 50%;
   width: 68%;
   height: 56%;
@@ -295,7 +296,7 @@ button:focus-visible {
 .table-center {
   position: absolute;
   z-index: 3;
-  top: 41.5%;
+  top: 44%;
   left: 50%;
   display: grid;
   width: 53%;
@@ -319,6 +320,12 @@ button:focus-visible {
   border-radius: 50%;
   background: var(--app-accent);
   box-shadow: 0 0 9px rgba(216, 233, 142, 0.8);
+}
+
+.stage-speech .center-kicker,
+.stage-farewellSpeech .center-kicker,
+.stage-tieSpeech .center-kicker {
+  display: none;
 }
 
 .timer-orbit {
@@ -558,20 +565,32 @@ button:focus-visible {
 }
 
 .table-seat.is-selected {
+  border-color: rgba(223, 173, 99, 0.78);
+  color: #fff0d3;
+  background: linear-gradient(145deg, #5b4931, #342d22);
+  box-shadow: 0 0 0 2px rgba(223, 173, 99, 0.12), 0 14px 28px rgba(0, 0, 0, 0.36);
+}
+
+.table-seat.is-current {
+  z-index: 5;
   border-color: #e7f3aa;
   color: #f7ffd9;
   background: linear-gradient(145deg, #596241, #343b29);
-  box-shadow: 0 0 0 2px rgba(216, 233, 142, 0.14), 0 14px 28px rgba(0, 0, 0, 0.36);
+  box-shadow: 0 0 0 2px rgba(216, 233, 142, 0.15), 0 14px 28px rgba(0, 0, 0, 0.36);
 }
 
 .table-seat.is-current::after {
   content: "ГОВОРИТ";
   position: absolute;
-  top: -13px;
+  top: -18px;
   left: 50%;
+  padding: 3px 6px;
   transform: translateX(-50%);
-  color: #e6f5a4;
-  font-size: 6px;
+  border-radius: 99px;
+  color: #263019;
+  background: #dceba0;
+  box-shadow: 0 5px 12px rgba(0, 0, 0, 0.25);
+  font-size: 7px;
   font-weight: 900;
   letter-spacing: 0.09em;
   white-space: nowrap;
@@ -711,9 +730,10 @@ button:focus-visible {
   top: 90%;
   left: 50%;
   display: grid;
-  grid-template-columns: 34px auto;
+  grid-template-columns: 34px;
   align-items: center;
-  gap: 7px;
+  justify-items: center;
+  gap: 0;
   transform: translate(-50%, -50%);
 }
 
@@ -721,9 +741,10 @@ button:focus-visible {
   position: absolute;
   z-index: -1;
   top: -19px;
-  left: 16px;
+  left: 50%;
   width: 1px;
   height: 18px;
+  transform: translateX(-50%);
   background: linear-gradient(to bottom, transparent, rgba(216, 233, 142, 0.4));
 }
 
@@ -743,8 +764,14 @@ button:focus-visible {
 }
 
 .master-copy {
+  position: absolute;
+  top: 50%;
+  left: calc(100% + 8px);
   display: grid;
   gap: 1px;
+  justify-items: start;
+  transform: translateY(-50%);
+  text-align: left;
   white-space: nowrap;
 }
 
@@ -2275,7 +2302,7 @@ button:focus-visible {
   }
 
   .table-stage {
-    height: 382px;
+    height: 430px;
   }
 
   .stage-vote .table-stage,
@@ -2330,8 +2357,8 @@ button:focus-visible {
   }
 
   .table-stage {
-    height: clamp(270px, calc(100dvh - 360px), 330px);
-    margin-top: 0;
+    height: clamp(270px, calc(100dvh - 360px), 370px);
+    margin-top: 8px;
   }
 
   .stage-vote .table-stage,
@@ -2341,7 +2368,7 @@ button:focus-visible {
   .stage-nightDon .table-stage,
   .stage-nightSheriff .table-stage,
   .stage-nightSummary .table-stage {
-    height: clamp(255px, calc(100dvh - 350px), 315px);
+    height: clamp(255px, calc(100dvh - 350px), 355px);
   }
 
   .table-seat {
@@ -2570,7 +2597,7 @@ button:focus-visible {
   }
 
   .header-main {
-    grid-template-columns: 64px 1fr 34px;
+    grid-template-columns: 64px 1fr 64px;
   }
 
   .undo-button {
@@ -2595,7 +2622,7 @@ button:focus-visible {
   }
 
   .table-stage {
-    height: clamp(245px, calc(100dvh - 345px), 295px);
+    height: clamp(245px, calc(100dvh - 345px), 340px);
   }
 
   .stage-vote .table-stage,
@@ -2605,7 +2632,7 @@ button:focus-visible {
   .stage-nightDon .table-stage,
   .stage-nightSheriff .table-stage,
   .stage-nightSummary .table-stage {
-    height: clamp(235px, calc(100dvh - 335px), 280px);
+    height: clamp(235px, calc(100dvh - 335px), 325px);
   }
 
   .table-seat {
