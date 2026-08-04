@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { getWinner, type Winner } from "./game-rules";
 
 type Stage =
   | "dealChoice"
@@ -19,7 +20,8 @@ type Stage =
   | "nightShot"
   | "nightDon"
   | "nightSheriff"
-  | "nightSummary";
+  | "nightSummary"
+  | "gameOver";
 
 type Role = "Мирный" | "Мафия" | "Дон" | "Шериф";
 type DealMethod = "app" | "cards" | null;
@@ -309,6 +311,9 @@ export default function Home() {
   const selectedPlayer = players.find((player) => player.seat === selectedSeat) ?? players[0];
   const currentPlayer = players.find((player) => player.seat === currentSeat) ?? players[0];
   const alivePlayers = players.filter((player) => player.alive);
+  const aliveBlackCount = alivePlayers.filter((player) => player.role === "Мафия" || player.role === "Дон").length;
+  const aliveRedCount = alivePlayers.length - aliveBlackCount;
+  const winner: Winner | null = stage === "gameOver" ? getWinner(players) : null;
   const nominees = useMemo(
     () => players.filter((player) => player.alive && player.nomination !== null).sort((a, b) => a.nomination! - b.nomination!),
     [players],
@@ -412,6 +417,21 @@ export default function Home() {
 
   const addLog = (entry: string) => setEventLog((current) => [entry, ...current].slice(0, 12));
 
+  const finishGameIfNeeded = (roster: Player[]) => {
+    const result = getWinner(roster);
+    if (!result) return false;
+
+    const winnerLabel = result === "red" ? "красных" : "чёрных";
+    setPlayers(roster);
+    setFarewellState(null);
+    setRunning(false);
+    setStage("gameOver");
+    setRolesVisible(true);
+    addLog(`Игра завершена · победа ${winnerLabel}`);
+    setToast(`Победа ${winnerLabel}`);
+    return true;
+  };
+
   const restoreSnapshot = (snapshot: GameSnapshot) => {
     setPlayers(snapshot.players);
     setStage(snapshot.stage);
@@ -448,6 +468,7 @@ export default function Home() {
   };
 
   const undo = () => {
+    if (stage === "gameOver") setRolesVisible(false);
     if (stage === "appDeal") {
       if (roleRevealed) {
         setRoleRevealed(false);
@@ -544,6 +565,41 @@ export default function Home() {
     restoreSnapshot(previous.snapshot);
     setHistory((current) => current.slice(0, -1));
     setToast(`Отменено: ${previous.label}`);
+  };
+
+  const startNewGame = () => {
+    deadlineRef.current = 0;
+    manualAssignLockRef.current = false;
+    setPlayers(initialPlayers.map((player) => ({ ...player })));
+    setStage("dealChoice");
+    setDealMethod(null);
+    setDealIndex(0);
+    setAppViewedCount(0);
+    setRoleRevealed(false);
+    setMasterSummaryVisible(false);
+    setRolesVisible(false);
+    setDay(1);
+    setRound(1);
+    setRoundStarter(1);
+    setCurrentSeat(1);
+    setSelectedSeat(1);
+    setSpokenSeats([]);
+    setSeconds(60);
+    setTimerBaseSeconds(60);
+    setTimerTotalSeconds(60);
+    setRunning(false);
+    setVoteState(emptyVoteState);
+    setTieSeats([]);
+    setTieSpeechIndex(0);
+    setLiftDraft([]);
+    setNightTarget(1);
+    setNightShotChoice(null);
+    setNightRecords([]);
+    setFarewellState(null);
+    setNominationRecords([]);
+    setEventLog(["Выберите способ раздачи ролей"]);
+    setHistory([]);
+    setToast(null);
   };
 
   const beginAppDeal = () => {
@@ -693,7 +749,7 @@ export default function Home() {
     if (!selectedPlayer.alive || selectedPlayer.fouls >= 4) return;
     remember(`фол игроку №${selectedSeat}`);
     const nextFouls = selectedPlayer.fouls + 1;
-    setPlayers((current) => current.map((player) => player.seat === selectedSeat
+    const nextPlayers = players.map((player) => player.seat === selectedSeat
       ? {
         ...player,
         fouls: nextFouls,
@@ -701,7 +757,8 @@ export default function Home() {
         alive: nextFouls < 4,
         eliminatedBy: nextFouls === 4 ? "fouls" : player.eliminatedBy,
       }
-      : player));
+      : player);
+    setPlayers(nextPlayers);
     if (selectedSeat === currentSeat && nextFouls === 4) setRunning(false);
     const message = nextFouls === 4
       ? `Игрок №${selectedSeat} покидает стол: 4-й фол`
@@ -710,6 +767,7 @@ export default function Home() {
         : `Игроку №${selectedSeat} добавлен ${nextFouls}-й фол`;
     addLog(message);
     setToast(message);
+    if (nextFouls === 4) finishGameIfNeeded(nextPlayers);
   };
 
   const removeFoul = () => {
@@ -736,20 +794,22 @@ export default function Home() {
     if (!selectedPlayer.alive || selectedPlayer.yellowCards >= 2) return;
     remember(`жёлтая карточка игроку №${selectedSeat}`);
     const nextCards = selectedPlayer.yellowCards + 1;
-    setPlayers((current) => current.map((player) => player.seat === selectedSeat
+    const nextPlayers = players.map((player) => player.seat === selectedSeat
       ? {
         ...player,
         yellowCards: nextCards,
         alive: nextCards < 2,
         eliminatedBy: nextCards === 2 ? "yellowCards" : player.eliminatedBy,
       }
-      : player));
+      : player);
+    setPlayers(nextPlayers);
     if (selectedSeat === currentSeat && nextCards === 2) setRunning(false);
     const message = nextCards === 2
       ? `Игрок №${selectedSeat} удалён: две жёлтые карточки`
       : `Игроку №${selectedSeat} показана жёлтая карточка`;
     addLog(message);
     setToast(message);
+    if (nextCards === 2) finishGameIfNeeded(nextPlayers);
   };
 
   const toggleNomination = () => {
@@ -784,7 +844,7 @@ export default function Home() {
     if (!currentPlayer.alive) return;
     remember(`покупка 30 секунд игроком №${currentSeat}`);
     const nextFouls = Math.min(4, currentPlayer.fouls + 2);
-    setPlayers((current) => current.map((player) => player.seat === currentSeat
+    const nextPlayers = players.map((player) => player.seat === currentSeat
       ? {
         ...player,
         fouls: nextFouls,
@@ -792,7 +852,8 @@ export default function Home() {
         alive: nextFouls < 4,
         eliminatedBy: nextFouls === 4 ? "fouls" : player.eliminatedBy,
       }
-      : player));
+      : player);
+    setPlayers(nextPlayers);
     setSeconds((current) => current + 30);
     setTimerTotalSeconds((current) => current + 30);
     if (running) deadlineRef.current += 30_000;
@@ -800,6 +861,7 @@ export default function Home() {
     const message = `Игрок №${currentSeat}: +30 секунд и +2 фола`;
     addLog(message);
     setToast(message);
+    if (nextFouls === 4) finishGameIfNeeded(nextPlayers);
   };
 
   const beginNight = (nightPlayers: Player[] = players) => {
@@ -861,6 +923,7 @@ export default function Home() {
       ? { ...player, alive: false, eliminatedBy: farewellState.reason as EliminationReason }
       : player);
     setFarewellState(null);
+    if (finishGameIfNeeded(nextPlayers)) return;
     if (farewellState.after === "night") {
       setPlayers(nextPlayers);
       beginNight(nextPlayers);
@@ -1330,7 +1393,10 @@ export default function Home() {
 
   let stageLabel = "";
   let stageNote = "";
-  if (stage === "speech") {
+  if (stage === "gameOver") {
+    stageLabel = "Игра завершена";
+    stageNote = winner === "red" ? "Победа красных" : "Победа чёрных";
+  } else if (stage === "speech") {
     stageLabel = `Речь ${Math.min(spokenSeats.length + 1, speechOrder.length)} из ${speechOrder.length}`;
     stageNote = timerBaseSeconds === 30 ? "3 фола · 30 секунд" : `Круг начал №${roundStarter}`;
   } else if (stage === "farewellSpeech") {
@@ -1362,7 +1428,9 @@ export default function Home() {
     stageNote = shotResult ? `Выбывает №${shotResult}` : shotRecord ? "Промах" : "Без отстрела";
   }
 
-  const primaryLabel = stage === "speech"
+  const primaryLabel = stage === "gameOver"
+    ? "Новая игра"
+    : stage === "speech"
     ? isLastSpeech
       ? nominees.length ? `К голосованию · ${nominees.length}` : "К ночи"
       : `Следующий: игрок №${nextSpeechSeat}`
@@ -1386,7 +1454,9 @@ export default function Home() {
                 ? sheriff ? `Записать · ${currentCheckResult.toUpperCase()} · к Шерифу` : `Записать · ${currentCheckResult.toUpperCase()}`
                 : `Записать · ${currentCheckResult.toUpperCase()} · к итогам`;
 
-  const onPrimary = stage === "speech"
+  const onPrimary = stage === "gameOver"
+    ? startNewGame
+    : stage === "speech"
     ? advanceSpeech
     : stage === "farewellSpeech"
       ? advanceFarewell
@@ -1413,10 +1483,11 @@ export default function Home() {
           ? `Шериф · проверка игрока №${nightTarget}`
           : `Попил · игрок №${currentSeat}`;
   const timerStatus = seconds === 0 ? "Время вышло" : running ? "таймер идёт" : "готов к старту";
+  const winnerClass = winner ? `winner-${winner}` : "";
 
   return (
     <main className="app-shell">
-      <section className={`game-app stage-${stage} ${isWarning ? "is-warning" : ""}`} aria-label="Пульт ведущего Mafia Master">
+      <section className={`game-app stage-${stage} ${winnerClass} ${isWarning ? "is-warning" : ""}`} aria-label="Пульт ведущего Mafia Master">
         <header className="game-header">
           <div className="header-main">
             <button className="undo-button" onClick={undo} disabled={!undoAvailable} aria-label="Откатить последнее действие назад">
@@ -1471,6 +1542,12 @@ export default function Home() {
               </div>
             ) : stage === "lift" ? (
               <div className="workflow-center"><span>Поднять {tieSeats.map((seat) => `№${seat}`).join(" и ")}?</span><strong>{liftDraft.length}</strong><small>за · нужно {Math.floor(alivePlayers.length / 2) + 1}</small></div>
+            ) : stage === "gameOver" ? (
+              <div className="workflow-center game-over-center">
+                <span>Игра завершена</span>
+                <strong>{winner === "red" ? "КРАСНЫЕ" : "ЧЁРНЫЕ"}</strong>
+                <small>победа команды</small>
+              </div>
             ) : stage === "nightSummary" ? (
               <div className="workflow-center night-result"><span>Итог ночи</span><strong>{shotResult ? `№${shotResult}` : shotRecord ? "Промах" : "Без отстрела"}</strong><small>{shotResult ? "покидает стол утром" : "никто не выбывает"}</small></div>
             ) : stage === "nightShot" ? (
@@ -1497,7 +1574,7 @@ export default function Home() {
               return (
                 <button
                   key={player.seat}
-                  className={`table-seat seat-${player.seat} ${isSelected ? "is-selected" : ""} ${isCurrentSpeaker ? "is-current" : ""} ${player.nomination ? "is-nominated" : ""} ${isCandidate ? "is-candidate" : ""} ${draftVote || liftVote ? "is-draft-vote" : ""} ${isTarget ? "is-night-target" : ""} ${lockedCandidate !== null ? "has-voted" : ""} ${!player.alive ? "is-eliminated" : ""}`}
+                  className={`table-seat seat-${player.seat} ${isSelected ? "is-selected" : ""} ${isCurrentSpeaker ? "is-current" : ""} ${player.nomination && stage !== "gameOver" ? "is-nominated" : ""} ${isCandidate ? "is-candidate" : ""} ${draftVote || liftVote ? "is-draft-vote" : ""} ${isTarget ? "is-night-target" : ""} ${lockedCandidate !== null ? "has-voted" : ""} ${!player.alive ? "is-eliminated" : ""}`}
                   aria-disabled={lockedCandidate !== null || (!player.alive && stage !== "speech")}
                   onClick={() => handleSeatClick(player.seat)}
                   aria-label={`Игрок №${player.seat}, ${player.name}${rolesVisible && player.role ? `, роль ${player.role}` : ""}${lockedCandidate !== null ? `, голос за игрока №${lockedCandidate} зафиксирован` : ""}`}
@@ -1517,7 +1594,7 @@ export default function Home() {
           <div className="master-seat" aria-label="Место ведущего"><span className="master-line" /><span className="master-avatar">M</span><span className="master-copy"><strong>Ведущий</strong><small>ваше место</small></span></div>
         </section>
 
-        {nominees.length > 0 && !stage.startsWith("night") && stage !== "farewellSpeech" && (
+        {nominees.length > 0 && !stage.startsWith("night") && stage !== "farewellSpeech" && stage !== "gameOver" && (
           <section className="candidate-queue" aria-label="Очередь кандидатур">
             <div><span>Кандидаты</span></div>
             <ol>{nominees.map((player) => {
@@ -1567,9 +1644,21 @@ export default function Home() {
             return <div key={`${record.type}-${record.target ?? "miss"}-${index}`} className={resultRole ? `role-${roleClassNames[resultRole]}` : ""}><strong>{record.type === "shot" ? "Отстрел" : record.type === "don" ? "Проверка Дона" : "Проверка Шерифа"}</strong><span className="night-record-value">{resultRole && <RoleGlyph role={resultRole} />}{record.type === "shot" ? record.target ? `игрок №${record.target}` : "промах" : `№${record.target} · ${record.result.toUpperCase()}`}</span></div>;
           })}<div className="night-outcome"><strong>Утром</strong><span>{shotResult ? `выбывает №${shotResult}` : "никто не выбывает"}</span></div></div>}
 
+          {stage === "gameOver" && (
+            <div className="game-over-panel">
+              <span>Финальный результат</span>
+              <strong>Победа {winner === "red" ? "красных" : "чёрных"}</strong>
+              <div className="game-over-score" aria-label={`Осталось красных: ${aliveRedCount}, чёрных: ${aliveBlackCount}`}>
+                <span className="red"><b>{aliveRedCount}</b> красных</span>
+                <span className="black"><b>{aliveBlackCount}</b> чёрных</span>
+              </div>
+              <small>{winner === "red" ? "Все игроки чёрной команды покинули стол" : "Чёрных стало не меньше, чем красных"}</small>
+            </div>
+          )}
+
           <button className="primary-action" onClick={onPrimary} disabled={primaryDisabled}>
-            <span><small>{stage === "speech" ? "Речи идут по часовой стрелке" : stage === "farewellSpeech" ? "Прощальная речь длится 60 секунд" : stage === "vote" || stage === "revote" ? `${voteState.draft.length} ${voteWord(voteState.draft.length)} будет зафиксировано` : isNightCheckStage ? "На проверку отведено 15 секунд" : "Следующий этап откроется автоматически"}</small>{primaryLabel}</span>
-            <strong>→</strong>
+            <span><small>{stage === "gameOver" ? "Роли раскрыты · результат зафиксирован" : stage === "speech" ? "Речи идут по часовой стрелке" : stage === "farewellSpeech" ? "Прощальная речь длится 60 секунд" : stage === "vote" || stage === "revote" ? `${voteState.draft.length} ${voteWord(voteState.draft.length)} будет зафиксировано` : isNightCheckStage ? "На проверку отведено 15 секунд" : "Следующий этап откроется автоматически"}</small>{primaryLabel}</span>
+            <strong>{stage === "gameOver" ? "↻" : "→"}</strong>
           </button>
         </section>
 

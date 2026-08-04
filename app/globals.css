@@ -86,6 +86,18 @@ button:focus-visible {
   display: none;
 }
 
+.game-app.winner-red {
+  --app-accent: #ef6b76;
+  --winner-border: rgba(239, 107, 118, 0.3);
+  --winner-bg: rgba(220, 79, 93, 0.08);
+}
+
+.game-app.winner-black {
+  --app-accent: #a77bdd;
+  --winner-border: rgba(167, 123, 221, 0.3);
+  --winner-bg: rgba(122, 73, 189, 0.09);
+}
+
 .game-app::before {
   content: "";
   position: absolute;
@@ -286,7 +298,8 @@ button:focus-visible {
 .stage-nightShot .table-stage,
 .stage-nightDon .table-stage,
 .stage-nightSheriff .table-stage,
-.stage-nightSummary .table-stage {
+.stage-nightSummary .table-stage,
+.stage-gameOver .table-stage {
   height: clamp(368px, 45svh, 410px);
 }
 
@@ -505,6 +518,18 @@ button:focus-visible {
 .workflow-center.night-shot-choice > strong {
   color: #efc27d;
   font-size: clamp(22px, 7vw, 31px);
+}
+
+.workflow-center.game-over-center {
+  min-width: 172px;
+  border-color: var(--winner-border);
+  background: linear-gradient(var(--winner-bg), var(--winner-bg)), rgba(31, 35, 27, 0.9);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.28), inset 0 1px rgba(255, 255, 255, 0.05);
+}
+
+.workflow-center.game-over-center > strong {
+  color: var(--app-accent);
+  font-size: clamp(22px, 6.5vw, 30px);
 }
 
 .check-result-value {
@@ -1323,6 +1348,75 @@ button:focus-visible {
 .night-summary > div.role-citizen .night-record-value { color: #ef747f; }
 .night-summary > div.role-mafia .night-record-value { color: #f4f4f2; }
 .night-summary > div.role-sheriff .night-record-value { color: var(--role-sheriff); }
+
+.game-over-panel {
+  display: grid;
+  min-height: 92px;
+  justify-items: center;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--winner-border);
+  border-radius: 14px;
+  background: linear-gradient(var(--winner-bg), var(--winner-bg)), rgba(255, 255, 255, 0.025);
+  text-align: center;
+}
+
+.game-over-panel > span {
+  color: var(--app-accent);
+  font-size: 7px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.game-over-panel > strong {
+  font-family: Georgia, serif;
+  font-size: 18px;
+  font-weight: 500;
+}
+
+.game-over-panel > small {
+  color: #828875;
+  font-size: 7px;
+}
+
+.game-over-score {
+  display: grid;
+  width: min(100%, 250px);
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.game-over-score span {
+  display: flex;
+  min-height: 27px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border-radius: 9px;
+  font-size: 8px;
+  font-weight: 800;
+}
+
+.game-over-score b {
+  font-family: ui-monospace, monospace;
+  font-size: 15px;
+}
+
+.game-over-score .red {
+  color: #ff9ca4;
+  background: rgba(220, 79, 93, 0.11);
+}
+
+.game-over-score .black {
+  color: #c8a7ed;
+  background: rgba(122, 73, 189, 0.12);
+}
+
+.stage-gameOver .table-seat.is-eliminated {
+  opacity: 0.58;
+  filter: none;
+}
 
 .shot-control {
   display: grid;
@@ -2392,7 +2486,8 @@ button:focus-visible {
   .stage-nightShot .table-stage,
   .stage-nightDon .table-stage,
   .stage-nightSheriff .table-stage,
-  .stage-nightSummary .table-stage {
+  .stage-nightSummary .table-stage,
+  .stage-gameOver .table-stage {
     height: 355px;
   }
 
@@ -2448,7 +2543,8 @@ button:focus-visible {
   .stage-nightShot .table-stage,
   .stage-nightDon .table-stage,
   .stage-nightSheriff .table-stage,
-  .stage-nightSummary .table-stage {
+  .stage-nightSummary .table-stage,
+  .stage-gameOver .table-stage {
     height: clamp(255px, calc(100dvh - 350px), 355px);
   }
 
@@ -2557,6 +2653,11 @@ button:focus-visible {
   .simple-instruction,
   .night-instruction {
     min-height: 60px;
+  }
+
+  .game-over-panel {
+    min-height: 74px;
+    padding: 7px 10px;
   }
 
   .shot-control,
@@ -2725,7 +2826,8 @@ button:focus-visible {
   .stage-nightShot .table-stage,
   .stage-nightDon .table-stage,
   .stage-nightSheriff .table-stage,
-  .stage-nightSummary .table-stage {
+  .stage-nightSummary .table-stage,
+  .stage-gameOver .table-stage {
     height: clamp(235px, calc(100dvh - 335px), 325px);
   }
 
