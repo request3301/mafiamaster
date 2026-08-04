@@ -9,7 +9,9 @@ type Stage =
   | "dealReady"
   | "agreement"
   | "freeSeating"
+  | "morningReady"
   | "speech"
+  | "farewellSpeech"
   | "vote"
   | "tieSpeech"
   | "revote"
@@ -22,15 +24,33 @@ type Stage =
 type Role = "Мирный" | "Мафия" | "Дон" | "Шериф";
 type DealMethod = "app" | "cards" | null;
 type VoteMap = Record<number, number[]>;
+type EliminationReason = "fouls" | "yellowCards" | "vote" | "shot" | null;
+type FarewellState = {
+  seats: number[];
+  index: number;
+  reason: "vote" | "shot";
+  after: "night" | "round";
+} | null;
 
 type Player = {
   seat: number;
   name: string;
   role: Role | null;
   fouls: number;
+  yellowCards: number;
+  shortSpeechPending: boolean;
   nomination: number | null;
   nominatedBy: number | null;
   alive: boolean;
+  eliminatedBy: EliminationReason;
+};
+
+type NominationRecord = {
+  day: number;
+  round: number;
+  order: number;
+  nominatorSeat: number;
+  candidateSeat: number;
 };
 
 type VoteState = {
@@ -61,6 +81,8 @@ type GameSnapshot = {
   selectedSeat: number;
   spokenSeats: number[];
   seconds: number;
+  timerBaseSeconds: number;
+  timerTotalSeconds: number;
   running: boolean;
   voteState: VoteState;
   tieSeats: number[];
@@ -69,6 +91,8 @@ type GameSnapshot = {
   nightTarget: number;
   nightShotChoice: number | "miss" | null;
   nightRecords: NightRecord[];
+  farewellState: FarewellState;
+  nominationRecords: NominationRecord[];
   eventLog: string[];
 };
 
@@ -77,17 +101,33 @@ type UndoEntry = {
   snapshot: GameSnapshot;
 };
 
+type TelegramWebApp = {
+  ready: () => void;
+  expand: () => void;
+  setHeaderColor?: (color: string) => void;
+  setBackgroundColor?: (color: string) => void;
+  setBottomBarColor?: (color: string) => void;
+  enableClosingConfirmation?: () => void;
+  disableClosingConfirmation?: () => void;
+};
+
+declare global {
+  interface Window {
+    Telegram?: { WebApp?: TelegramWebApp };
+  }
+}
+
 const initialPlayers: Player[] = [
-  { seat: 1, name: "Анна", role: null, fouls: 0, nomination: null, nominatedBy: null, alive: true },
-  { seat: 2, name: "Борис", role: null, fouls: 0, nomination: null, nominatedBy: null, alive: true },
-  { seat: 3, name: "Вика", role: null, fouls: 0, nomination: null, nominatedBy: null, alive: true },
-  { seat: 4, name: "Глеб", role: null, fouls: 0, nomination: null, nominatedBy: null, alive: true },
-  { seat: 5, name: "Дана", role: null, fouls: 0, nomination: null, nominatedBy: null, alive: true },
-  { seat: 6, name: "Егор", role: null, fouls: 0, nomination: null, nominatedBy: null, alive: true },
-  { seat: 7, name: "Жанна", role: null, fouls: 0, nomination: null, nominatedBy: null, alive: true },
-  { seat: 8, name: "Илья", role: null, fouls: 0, nomination: null, nominatedBy: null, alive: true },
-  { seat: 9, name: "Кира", role: null, fouls: 0, nomination: null, nominatedBy: null, alive: true },
-  { seat: 10, name: "Лев", role: null, fouls: 0, nomination: null, nominatedBy: null, alive: true },
+  { seat: 1, name: "Анна", role: null, fouls: 0, yellowCards: 0, shortSpeechPending: false, nomination: null, nominatedBy: null, alive: true, eliminatedBy: null },
+  { seat: 2, name: "Борис", role: null, fouls: 0, yellowCards: 0, shortSpeechPending: false, nomination: null, nominatedBy: null, alive: true, eliminatedBy: null },
+  { seat: 3, name: "Вика", role: null, fouls: 0, yellowCards: 0, shortSpeechPending: false, nomination: null, nominatedBy: null, alive: true, eliminatedBy: null },
+  { seat: 4, name: "Глеб", role: null, fouls: 0, yellowCards: 0, shortSpeechPending: false, nomination: null, nominatedBy: null, alive: true, eliminatedBy: null },
+  { seat: 5, name: "Дана", role: null, fouls: 0, yellowCards: 0, shortSpeechPending: false, nomination: null, nominatedBy: null, alive: true, eliminatedBy: null },
+  { seat: 6, name: "Егор", role: null, fouls: 0, yellowCards: 0, shortSpeechPending: false, nomination: null, nominatedBy: null, alive: true, eliminatedBy: null },
+  { seat: 7, name: "Жанна", role: null, fouls: 0, yellowCards: 0, shortSpeechPending: false, nomination: null, nominatedBy: null, alive: true, eliminatedBy: null },
+  { seat: 8, name: "Илья", role: null, fouls: 0, yellowCards: 0, shortSpeechPending: false, nomination: null, nominatedBy: null, alive: true, eliminatedBy: null },
+  { seat: 9, name: "Кира", role: null, fouls: 0, yellowCards: 0, shortSpeechPending: false, nomination: null, nominatedBy: null, alive: true, eliminatedBy: null },
+  { seat: 10, name: "Лев", role: null, fouls: 0, yellowCards: 0, shortSpeechPending: false, nomination: null, nominatedBy: null, alive: true, eliminatedBy: null },
 ];
 
 const standardRoles: Role[] = [
@@ -107,12 +147,6 @@ const roleClassNames: Record<Role, string> = {
   Мафия: "mafia",
   Дон: "don",
   Шериф: "sheriff",
-};
-const roleSymbols: Record<Role, string> = {
-  Мирный: "♥",
-  Мафия: "🔫",
-  Дон: "🎩",
-  Шериф: "★",
 };
 const roleOptions: Role[] = ["Мирный", "Мафия", "Дон", "Шериф"];
 
@@ -145,8 +179,16 @@ function FoulMarks({ count }: { count: number }) {
   );
 }
 
+function YellowMarks({ count }: { count: number }) {
+  return (
+    <span className="yellow-marks" aria-label={`Жёлтых карточек: ${count}`}>
+      {[0, 1].map((card) => <span key={card} className={card < count ? "is-filled" : ""} />)}
+    </span>
+  );
+}
+
 function RoleGlyph({ role, className = "" }: { role: Role; className?: string }) {
-  return <span className={`role-glyph role-${roleClassNames[role]} ${className}`} aria-label={role}>{roleSymbols[role]}</span>;
+  return <span className={`role-glyph role-${roleClassNames[role]} ${className}`} role="img" aria-label={role}><i className="role-icon" aria-hidden="true" /></span>;
 }
 
 function RoleMiniMap({ players, currentSeat, title = "Карта ролей" }: { players: Player[]; currentSeat?: number; title?: string }) {
@@ -160,7 +202,7 @@ function RoleMiniMap({ players, currentSeat, title = "Карта ролей" }: 
           aria-label={`Игрок №${player.seat}${player.role ? `, ${player.role}` : ", роль не внесена"}`}
         >
           <b>{player.seat}</b>
-          <span aria-hidden="true">{player.role ? roleSymbols[player.role] : "·"}</span>
+          {player.role ? <RoleGlyph role={player.role} className="mini-role-glyph" /> : <span className="mini-role-placeholder" aria-hidden="true">·</span>}
         </div>
       ))}
     </section>
@@ -222,6 +264,8 @@ export default function Home() {
   const [selectedSeat, setSelectedSeat] = useState(1);
   const [spokenSeats, setSpokenSeats] = useState<number[]>([]);
   const [seconds, setSeconds] = useState(60);
+  const [timerBaseSeconds, setTimerBaseSeconds] = useState(60);
+  const [timerTotalSeconds, setTimerTotalSeconds] = useState(60);
   const [running, setRunning] = useState(false);
   const [voteState, setVoteState] = useState<VoteState>(emptyVoteState);
   const [tieSeats, setTieSeats] = useState<number[]>([]);
@@ -230,11 +274,32 @@ export default function Home() {
   const [nightTarget, setNightTarget] = useState(6);
   const [nightShotChoice, setNightShotChoice] = useState<number | "miss" | null>(null);
   const [nightRecords, setNightRecords] = useState<NightRecord[]>([]);
+  const [farewellState, setFarewellState] = useState<FarewellState>(null);
+  const [nominationRecords, setNominationRecords] = useState<NominationRecord[]>([]);
   const [eventLog, setEventLog] = useState<string[]>(["Выберите способ раздачи ролей"]);
   const [history, setHistory] = useState<UndoEntry[]>([]);
   const [toast, setToast] = useState<string | null>(null);
   const deadlineRef = useRef(0);
   const manualAssignLockRef = useRef(false);
+
+  useEffect(() => {
+    const webApp = window.Telegram?.WebApp;
+    if (!webApp) return;
+
+    webApp.setHeaderColor?.("#090b08");
+    webApp.setBackgroundColor?.("#090b08");
+    webApp.setBottomBarColor?.("#090b08");
+    webApp.expand();
+    webApp.ready();
+  }, []);
+
+  useEffect(() => {
+    const webApp = window.Telegram?.WebApp;
+    if (!webApp) return;
+
+    if (stage === "dealChoice") webApp.disableClosingConfirmation?.();
+    else webApp.enableClosingConfirmation?.();
+  }, [stage]);
 
   const selectedPlayer = players.find((player) => player.seat === selectedSeat) ?? players[0];
   const currentPlayer = players.find((player) => player.seat === currentSeat) ?? players[0];
@@ -250,9 +315,9 @@ export default function Home() {
   const isLastSpeech = nextSpeechSeat === null;
   const currentCandidate = voteState.candidates[voteState.index] ?? null;
   const lockedVoters = Object.values(voteState.confirmed).flat();
-  const isTimedStage = stage === "agreement" || stage === "freeSeating" || stage === "speech" || stage === "tieSpeech";
-  const timerLimit = stage === "freeSeating" ? 40 : stage === "tieSpeech" ? 30 : 60;
-  const timerProgress = Math.max(0, Math.min(100, (seconds / Math.max(timerLimit, seconds)) * 100));
+  const isTimedStage = stage === "agreement" || stage === "freeSeating" || stage === "speech" || stage === "tieSpeech" || stage === "farewellSpeech";
+  const timerLimit = timerBaseSeconds;
+  const timerProgress = Math.max(0, Math.min(100, (seconds / Math.max(1, timerTotalSeconds)) * 100));
   const isWarning = isTimedStage && seconds <= 10;
   const don = players.find((player) => player.alive && player.role === "Дон");
   const sheriff = players.find((player) => player.alive && player.role === "Шериф");
@@ -285,6 +350,8 @@ export default function Home() {
     selectedSeat,
     spokenSeats,
     seconds,
+    timerBaseSeconds,
+    timerTotalSeconds,
     running,
     voteState,
     tieSeats,
@@ -293,13 +360,27 @@ export default function Home() {
     nightTarget,
     nightShotChoice,
     nightRecords,
+    farewellState,
+    nominationRecords,
     eventLog,
   });
 
   const startCountdown = (value: number) => {
     deadlineRef.current = Date.now() + value * 1000;
+    setTimerBaseSeconds(value);
+    setTimerTotalSeconds(value);
     setSeconds(value);
     setRunning(true);
+  };
+
+  const startNormalSpeech = (seat: number, roster: Player[] = players) => {
+    const shortSpeech = roster.find((player) => player.seat === seat)?.shortSpeechPending ?? false;
+    const duration = shortSpeech ? 30 : 50;
+    setPlayers(roster.map((player) => player.seat === seat ? { ...player, shortSpeechPending: false } : player));
+    setCurrentSeat(seat);
+    setStage("speech");
+    startCountdown(duration);
+    return duration;
   };
 
   useEffect(() => {
@@ -340,6 +421,8 @@ export default function Home() {
     setSelectedSeat(snapshot.selectedSeat);
     setSpokenSeats(snapshot.spokenSeats);
     setSeconds(snapshot.seconds);
+    setTimerBaseSeconds(snapshot.timerBaseSeconds);
+    setTimerTotalSeconds(snapshot.timerTotalSeconds);
     setVoteState(snapshot.voteState);
     setTieSeats(snapshot.tieSeats);
     setTieSpeechIndex(snapshot.tieSpeechIndex);
@@ -347,6 +430,8 @@ export default function Home() {
     setNightTarget(snapshot.nightTarget);
     setNightShotChoice(snapshot.nightShotChoice);
     setNightRecords(snapshot.nightRecords);
+    setFarewellState(snapshot.farewellState);
+    setNominationRecords(snapshot.nominationRecords);
     setEventLog(snapshot.eventLog);
     if (snapshot.running && snapshot.seconds > 0) {
       deadlineRef.current = Date.now() + snapshot.seconds * 1000;
@@ -405,15 +490,30 @@ export default function Home() {
     }
     if (stage === "agreement") {
       setRunning(false);
+      setTimerBaseSeconds(60);
+      setTimerTotalSeconds(60);
       setSeconds(60);
+      setMasterSummaryVisible(false);
       setStage("dealReady");
+      setToast("Карта ролей скрыта · подтвердите, что экран у ведущего");
       return;
     }
     if (stage === "freeSeating") {
-      setRunning(false);
-      setSeconds(0);
-      setStage("agreement");
-      setToast("Возврат к завершённой договорке");
+      const previous = history[history.length - 1];
+      if (previous) {
+        restoreSnapshot(previous.snapshot);
+        setHistory((current) => current.slice(0, -1));
+        setToast("Возврат к договорке");
+      }
+      return;
+    }
+    if (stage === "morningReady") {
+      const previous = history[history.length - 1];
+      if (previous) {
+        restoreSnapshot(previous.snapshot);
+        setHistory((current) => current.slice(0, -1));
+        setToast("Возврат к свободной посадке");
+      }
       return;
     }
     if (stage === "nightShot" && nightShotChoice !== null) {
@@ -506,9 +606,12 @@ export default function Home() {
     setPlayers((current) => current.map((player) => ({
       ...player,
       fouls: 0,
+      yellowCards: 0,
+      shortSpeechPending: false,
       nomination: null,
       nominatedBy: null,
       alive: true,
+      eliminatedBy: null,
     })));
     setStage("agreement");
     setDay(1);
@@ -524,6 +627,8 @@ export default function Home() {
     setNightTarget(1);
     setNightShotChoice(null);
     setNightRecords([]);
+    setFarewellState(null);
+    setNominationRecords([]);
     setEventLog(["Первая ночь · договорка 60 секунд"]);
     setHistory([]);
     startCountdown(60);
@@ -531,20 +636,30 @@ export default function Home() {
   };
 
   const beginFreeSeating = () => {
+    remember("начало свободной посадки");
     setStage("freeSeating");
     startCountdown(40);
     addLog("Свободная посадка · 40 секунд");
     setToast("Мафия засыпает · свободная посадка");
   };
 
+  const enterMorningReady = () => {
+    remember(seconds > 0 ? "пропуск свободной посадки" : "переход к утру");
+    setRunning(false);
+    setTimerBaseSeconds(50);
+    setTimerTotalSeconds(50);
+    setSeconds(50);
+    setStage("morningReady");
+    addLog(seconds > 0 ? "Свободная посадка пропущена · утро" : "В городе утро");
+    setToast("Речь игрока №1 ждёт команды ведущего");
+  };
+
   const beginFirstSpeech = () => {
-    remember("начало утра");
-    setStage("speech");
-    setCurrentSeat(1);
+    remember("начало речи игрока №1");
     setSpokenSeats([]);
-    startCountdown(60);
-    addLog("Утро · круг 1 начинает игрок №1");
-    setToast("В городе утро · таймер игрока №1 запущен");
+    const duration = startNormalSpeech(1);
+    addLog(`Утро · круг 1 начинает игрок №1 · ${duration} секунд`);
+    setToast(`Речь игрока №1 началась · ${duration} секунд`);
   };
 
   const toggleTimer = () => {
@@ -555,6 +670,7 @@ export default function Home() {
     }
     const nextSeconds = seconds === 0 ? timerLimit : seconds;
     setSeconds(nextSeconds);
+    if (seconds === 0) setTimerTotalSeconds(timerLimit);
     deadlineRef.current = Date.now() + nextSeconds * 1000;
     setRunning(true);
   };
@@ -562,6 +678,7 @@ export default function Home() {
   const resetTimer = () => {
     setRunning(false);
     setSeconds(timerLimit);
+    setTimerTotalSeconds(timerLimit);
     setToast(`Таймер сброшен на ${timerLimit} секунд`);
   };
 
@@ -570,10 +687,60 @@ export default function Home() {
     remember(`фол игроку №${selectedSeat}`);
     const nextFouls = selectedPlayer.fouls + 1;
     setPlayers((current) => current.map((player) => player.seat === selectedSeat
-      ? { ...player, fouls: nextFouls, alive: nextFouls < 4 }
+      ? {
+        ...player,
+        fouls: nextFouls,
+        shortSpeechPending: nextFouls === 3 ? true : player.shortSpeechPending,
+        alive: nextFouls < 4,
+        eliminatedBy: nextFouls === 4 ? "fouls" : player.eliminatedBy,
+      }
       : player));
     if (selectedSeat === currentSeat && nextFouls === 4) setRunning(false);
-    const message = nextFouls === 4 ? `Игрок №${selectedSeat} покидает стол: 4-й фол` : `Игроку №${selectedSeat} добавлен ${nextFouls}-й фол`;
+    const message = nextFouls === 4
+      ? `Игрок №${selectedSeat} покидает стол: 4-й фол`
+      : nextFouls === 3
+        ? `Игрок №${selectedSeat}: 3 фола · следующая речь 30 секунд`
+        : `Игроку №${selectedSeat} добавлен ${nextFouls}-й фол`;
+    addLog(message);
+    setToast(message);
+  };
+
+  const removeFoul = () => {
+    if (selectedPlayer.fouls <= 0) return;
+    remember(`снятие фола у игрока №${selectedSeat}`);
+    const nextFouls = selectedPlayer.fouls - 1;
+    setPlayers((current) => current.map((player) => {
+      if (player.seat !== selectedSeat) return player;
+      const revivesPlayer = player.eliminatedBy === "fouls" && nextFouls < 4;
+      return {
+        ...player,
+        fouls: nextFouls,
+        shortSpeechPending: nextFouls < 3 ? false : player.shortSpeechPending,
+        alive: revivesPlayer ? true : player.alive,
+        eliminatedBy: revivesPlayer ? null : player.eliminatedBy,
+      };
+    }));
+    const message = `У игрока №${selectedSeat} снят фол · осталось ${nextFouls}`;
+    addLog(message);
+    setToast(message);
+  };
+
+  const addYellowCard = () => {
+    if (!selectedPlayer.alive || selectedPlayer.yellowCards >= 2) return;
+    remember(`жёлтая карточка игроку №${selectedSeat}`);
+    const nextCards = selectedPlayer.yellowCards + 1;
+    setPlayers((current) => current.map((player) => player.seat === selectedSeat
+      ? {
+        ...player,
+        yellowCards: nextCards,
+        alive: nextCards < 2,
+        eliminatedBy: nextCards === 2 ? "yellowCards" : player.eliminatedBy,
+      }
+      : player));
+    if (selectedSeat === currentSeat && nextCards === 2) setRunning(false);
+    const message = nextCards === 2
+      ? `Игрок №${selectedSeat} удалён: две жёлтые карточки`
+      : `Игроку №${selectedSeat} показана жёлтая карточка`;
     addLog(message);
     setToast(message);
   };
@@ -581,21 +748,29 @@ export default function Home() {
   const toggleNomination = () => {
     if (!selectedPlayer.alive) return;
     if (selectedPlayer.nomination !== null) {
-      setToast(`Игрок №${selectedSeat} уже выставлен игроком №${selectedPlayer.nominatedBy}`);
+      setToast(`Игрок №${selectedSeat} уже в списке кандидатов`);
       return;
     }
     if (currentNomination) {
-      setToast(`Игрок №${currentSeat} уже выставил игрока №${currentNomination.seat}`);
+      setToast("В этой речи кандидат уже выставлен");
       return;
     }
-    remember(`выставление игрока №${selectedSeat} игроком №${currentSeat}`);
-    const nextOrder = nominees.length ? Math.max(...nominees.map((player) => player.nomination!)) + 1 : 1;
+    remember(`выставление кандидата №${selectedSeat}`);
+    const existingNominations = players.filter((player) => player.nomination !== null);
+    const nextOrder = existingNominations.length ? Math.max(...existingNominations.map((player) => player.nomination!)) + 1 : 1;
     setPlayers((current) => current.map((player) => player.seat === selectedSeat
       ? { ...player, nomination: nextOrder, nominatedBy: currentSeat }
       : player));
+    setNominationRecords((current) => [...current, {
+      day,
+      round,
+      order: nextOrder,
+      nominatorSeat: currentSeat,
+      candidateSeat: selectedSeat,
+    }]);
     const message = `Игрок №${currentSeat} выставил №${selectedSeat} · кандидат ${nextOrder}`;
     addLog(message);
-    setToast(message);
+    setToast(`Игрок №${selectedSeat} добавлен в список кандидатов`);
   };
 
   const buyTime = () => {
@@ -603,9 +778,16 @@ export default function Home() {
     remember(`покупка 30 секунд игроком №${currentSeat}`);
     const nextFouls = Math.min(4, currentPlayer.fouls + 2);
     setPlayers((current) => current.map((player) => player.seat === currentSeat
-      ? { ...player, fouls: nextFouls, alive: nextFouls < 4 }
+      ? {
+        ...player,
+        fouls: nextFouls,
+        shortSpeechPending: player.fouls < 3 && nextFouls >= 3 && nextFouls < 4 ? true : player.shortSpeechPending,
+        alive: nextFouls < 4,
+        eliminatedBy: nextFouls === 4 ? "fouls" : player.eliminatedBy,
+      }
       : player));
     setSeconds((current) => current + 30);
+    setTimerTotalSeconds((current) => current + 30);
     if (running) deadlineRef.current += 30_000;
     if (nextFouls === 4) setRunning(false);
     const message = `Игрок №${currentSeat}: +30 секунд и +2 фола`;
@@ -624,6 +806,63 @@ export default function Home() {
     setNightShotChoice(null);
     setNightRecords([]);
     setRunning(false);
+  };
+
+  const beginFarewell = (seats: number[], reason: "vote" | "shot", after: "night" | "round", roster: Player[] = players) => {
+    const queue = [...new Set(seats)].filter((seat) => roster.some((player) => player.seat === seat && player.alive));
+    if (!queue.length) {
+      if (after === "night") {
+        beginNight(roster);
+      } else {
+        setNightRecords([]);
+        setNightShotChoice(null);
+        const duration = startNormalSpeech(roundStarter, roster);
+        setToast(`Речь игрока №${roundStarter} началась · ${duration} секунд`);
+      }
+      return;
+    }
+    setPlayers(roster);
+    setFarewellState({ seats: queue, index: 0, reason, after });
+    setCurrentSeat(queue[0]);
+    setStage("farewellSpeech");
+    startCountdown(60);
+    const label = reason === "shot" ? "Убитый игрок" : "Заголосованный игрок";
+    addLog(`${label} №${queue[0]} · прощальная речь 60 секунд`);
+    setToast(`${label} №${queue[0]} · 60 секунд`);
+  };
+
+  const advanceFarewell = () => {
+    if (!farewellState) return;
+    remember(`прощальная речь игрока №${currentSeat}`);
+    setRunning(false);
+    if (farewellState.index < farewellState.seats.length - 1) {
+      const nextIndex = farewellState.index + 1;
+      const nextSeat = farewellState.seats[nextIndex];
+      setFarewellState({ ...farewellState, index: nextIndex });
+      setCurrentSeat(nextSeat);
+      startCountdown(60);
+      addLog(`Прощальная речь игрока №${nextSeat} · 60 секунд`);
+      setToast(`Следующая прощальная речь · игрок №${nextSeat}`);
+      return;
+    }
+
+    const nextPlayers = players.map((player) => farewellState.seats.includes(player.seat)
+      ? { ...player, alive: false, eliminatedBy: farewellState.reason as EliminationReason }
+      : player);
+    setFarewellState(null);
+    if (farewellState.after === "night") {
+      setPlayers(nextPlayers);
+      beginNight(nextPlayers);
+      setToast("Прощальная речь закончена · начинается ночь");
+    } else {
+      setNightRecords([]);
+      setNightShotChoice(null);
+      setSpokenSeats([]);
+      const duration = startNormalSpeech(roundStarter, nextPlayers);
+      const message = `Круг ${round} начинается с игрока №${roundStarter}`;
+      addLog(`${message} · ${duration} секунд`);
+      setToast(`${message} · таймер запущен`);
+    }
   };
 
   const beginVoting = () => {
@@ -653,10 +892,9 @@ export default function Home() {
     const next = speechOrder.find((seat) => !nextSpoken.includes(seat));
     setSpokenSeats(nextSpoken);
     if (next) {
-      setCurrentSeat(next);
-      startCountdown(60);
-      addLog(`Началась речь игрока №${next}`);
-      setToast(`Следующий игрок №${next} · таймер запущен`);
+      const duration = startNormalSpeech(next);
+      addLog(`Началась речь игрока №${next} · ${duration} секунд`);
+      setToast(`Следующий игрок №${next} · ${duration} секунд`);
     } else {
       beginVoting();
     }
@@ -678,12 +916,6 @@ export default function Home() {
         ? current.draft.filter((voter) => voter !== seat)
         : [...current.draft, seat],
     }));
-  };
-
-  const eliminateAndBeginNight = (seats: number[]) => {
-    const nextPlayers = players.map((player) => seats.includes(player.seat) ? { ...player, alive: false } : player);
-    setPlayers(nextPlayers);
-    beginNight(nextPlayers);
   };
 
   const confirmVotes = () => {
@@ -715,8 +947,8 @@ export default function Home() {
       setStage("tieSpeech");
       setToast(`Попил: ${leaders.map((seat) => `№${seat}`).join(" и ")} · по 30 секунд`);
     } else {
-      setToast(`Игрок №${leaders[0]} покидает стол · начинается ночь`);
-      eliminateAndBeginNight(leaders);
+      setToast(`Игрок №${leaders[0]} заголосован · прощальная речь`);
+      beginFarewell(leaders, "vote", "night");
     }
   };
 
@@ -763,8 +995,8 @@ export default function Home() {
       setStage("lift");
       setToast(`Повторный попил · голосуем за подъём ${leaders.map((seat) => `№${seat}`).join(" и ")}`);
     } else if (leaders.length === 1) {
-      setToast(`Игрок №${leaders[0]} покидает стол · начинается ночь`);
-      eliminateAndBeginNight(leaders);
+      setToast(`Игрок №${leaders[0]} заголосован · прощальная речь`);
+      beginFarewell(leaders, "vote", "night");
     } else {
       setToast("Голосов нет · оба остаются, начинается ночь");
       beginNight();
@@ -780,8 +1012,8 @@ export default function Home() {
     remember(`голосование за подъём ${tieSeats.map((seat) => `№${seat}`).join(" и ")}`);
     if (liftDraft.length >= Math.floor(alivePlayers.length / 2) + 1) {
       addLog(`${liftDraft.map((seat) => `№${seat}`).join(", ")} → поднять ${tieSeats.map((seat) => `№${seat}`).join(" и ")}`);
-      setToast("Большинство за · оба игрока покидают стол");
-      eliminateAndBeginNight(tieSeats);
+      setToast("Большинство за · прощальные речи по 60 секунд");
+      beginFarewell(tieSeats, "vote", "night");
     } else {
       addLog(`Большинства за подъём нет · оба остаются`);
       setToast("Большинства нет · оба остаются, начинается ночь");
@@ -842,24 +1074,26 @@ export default function Home() {
 
   const beginNextRound = () => {
     remember(`начало круга ${round + 1}`);
-    const nextPlayers = players.map((player) => shotResult === player.seat ? { ...player, alive: false } : player);
-    const nextStarter = nextAliveAfter(roundStarter, nextPlayers);
-    setPlayers(nextPlayers.map((player) => ({ ...player, nomination: null, nominatedBy: null })));
+    const previewPlayers = players.map((player) => shotResult === player.seat ? { ...player, alive: false as const } : player);
+    const nextStarter = nextAliveAfter(roundStarter, previewPlayers);
+    const roundPlayers = players.map((player) => ({ ...player, nomination: null, nominatedBy: null }));
     setDay((current) => current + 1);
     setRound((current) => current + 1);
     setRoundStarter(nextStarter);
-    setCurrentSeat(nextStarter);
     setSpokenSeats([]);
-    startCountdown(60);
     setVoteState(emptyVoteState);
     setTieSeats([]);
     setLiftDraft([]);
     setNightShotChoice(null);
-    setNightRecords([]);
-    setStage("speech");
-    const message = `Круг ${round + 1} начинается с игрока №${nextStarter}`;
-    addLog(message);
-    setToast(`${message} · таймер запущен`);
+    if (shotResult) {
+      beginFarewell([shotResult], "shot", "round", roundPlayers);
+    } else {
+      setNightRecords([]);
+      const duration = startNormalSpeech(nextStarter, roundPlayers);
+      const message = `Круг ${round + 1} начинается с игрока №${nextStarter}`;
+      addLog(`${message} · ${duration} секунд`);
+      setToast(`${message} · таймер запущен`);
+    }
   };
 
   const handleSeatClick = (seat: number) => {
@@ -883,7 +1117,7 @@ export default function Home() {
     }
   };
 
-  const isDealStage = stage === "dealChoice" || stage === "appDeal" || stage === "manualDeal" || stage === "dealReady" || stage === "agreement" || stage === "freeSeating";
+  const isDealStage = stage === "dealChoice" || stage === "appDeal" || stage === "manualDeal" || stage === "dealReady" || stage === "agreement" || stage === "freeSeating" || stage === "morningReady";
   const undoAvailable = isDealStage
     ? stage !== "dealChoice"
     : history.length > 0
@@ -902,8 +1136,10 @@ export default function Home() {
           ? "Договорка"
           : stage === "freeSeating"
             ? "Свободная посадка"
+            : stage === "morningReady"
+              ? "Утро"
             : `Игрок ${dealIndex + 1} из 10`;
-    const setupNote = stage === "appDeal" ? "Приватный просмотр" : stage === "manualDeal" ? "Ввод с колоды" : stage === "agreement" ? "60 секунд" : stage === "freeSeating" ? "40 секунд" : "Стандартная десятка";
+    const setupNote = stage === "appDeal" ? "Приватный просмотр" : stage === "manualDeal" ? "Ввод с колоды" : stage === "agreement" ? "60 секунд · можно пропустить" : stage === "freeSeating" ? "40 секунд · можно пропустить" : stage === "morningReady" ? "Ожидание ведущего" : "Стандартная десятка";
 
     return (
       <main className="app-shell">
@@ -913,7 +1149,7 @@ export default function Home() {
               <button className="undo-button" onClick={undo} disabled={!undoAvailable} aria-label="Вернуться назад">
                 <span>↶</span>Назад
               </button>
-              <div className="game-heading"><span>MAFIA MASTER · НОВАЯ ИГРА</span><strong>{stage === "agreement" || stage === "freeSeating" ? "Первая ночь" : "Раздача ролей"}</strong></div>
+              <div className="game-heading"><span>MAFIA MASTER · НОВАЯ ИГРА</span><strong>{stage === "agreement" || stage === "freeSeating" ? "Первая ночь" : stage === "morningReady" ? "День 1" : "Раздача ролей"}</strong></div>
               <div className="app-brand">M</div>
             </div>
             <div className="stage-status deal-status" aria-live="polite">
@@ -1005,12 +1241,12 @@ export default function Home() {
 
           {stage === "dealReady" && (
             <section className="deal-panel deal-ready">
-              {dealMethod === "app" && !masterSummaryVisible ? (
+              {!masterSummaryVisible ? (
                 <>
                   <div className="ready-seal"><span>✓</span></div>
-                  <span className="deal-eyebrow">Раздача завершена</span>
-                  <h1>Верните телефон ведущему</h1>
-                  <p>На следующем экране будет полная карта ролей. Игроки больше не смотрят.</p>
+                  <span className="deal-eyebrow">Карта ролей скрыта</span>
+                  <h1>{dealMethod === "app" ? "Верните телефон ведущему" : "Экран только для ведущего"}</h1>
+                  <p>На следующем экране будет полная карта ролей. Игроки не должны её видеть.</p>
                   <button className="primary-action deal-primary master-unlock" onClick={() => setMasterSummaryVisible(true)}>
                     <span><small>Только для ведущего</small>Я ведущий · открыть карту ролей</span><strong>→</strong>
                   </button>
@@ -1022,7 +1258,7 @@ export default function Home() {
                   <p>Эту схему видит только ведущий. Цвет и знак роли используются дальше во всех проверках.</p>
                   <RoleMiniMap players={players} title="Все роли" />
                   <div className="ready-composition">{roleOptions.map((role) => <div key={role} className={`role-${roleClassNames[role]}`}><RoleGlyph role={role} /><strong>{roleLimits[role]}</strong><span>{role}</span></div>)}</div>
-                  <div className="first-speaker"><span>Первая ночь</span><strong>Договорка · 60 секунд</strong><small>затем свободная посадка · 40 секунд</small></div>
+                  <div className="first-speaker"><span>Первая ночь</span><strong>Договорка · 60 секунд</strong><small>затем посадка · речь №1 запускает ведущий</small></div>
                   <button className="primary-action deal-primary" onClick={startGame}>
                     <span><small>Мафия просыпается, таймер включится сразу</small>Начать договорку · 60</span><strong>→</strong>
                   </button>
@@ -1038,7 +1274,10 @@ export default function Home() {
                 <h1>{stage === "agreement" ? "Договорка" : "Свободная посадка"}</h1>
                 <p>{stage === "agreement" ? "Просыпаются Дон и мафия. У команды 60 секунд на бесшумный план игры." : "Мафия спит. Дон и Шериф обозначаются ведущему, затем игроки принимают удобную посадку на 40 секунд."}</p>
               </div>
-              <RoleMiniMap players={players} title={stage === "agreement" ? "Карта ведущего" : "Роли за столом"} />
+              <div className="prep-privacy-note">
+                <span aria-hidden="true">{stage === "agreement" ? "○" : "↠"}</span>
+                <div><strong>{stage === "agreement" ? "Роли скрыты · этап можно пропустить" : "Этот этап можно пропустить"}</strong><small>{stage === "agreement" ? "Шериф и другие роли здесь не показываются" : "Переход к утру доступен в любой момент"}</small></div>
+              </div>
               <button
                 className="timer-orbit prep-timer-orbit"
                 onClick={toggleTimer}
@@ -1048,8 +1287,21 @@ export default function Home() {
                 <span className="timer-face"><time aria-live={seconds <= 10 ? "assertive" : "off"}>{seconds}</time><small>секунд · {seconds === 0 ? "время вышло" : running ? "таймер идёт" : "пауза"}</small></span>
               </button>
               <button className="timer-reset prep-reset" onClick={resetTimer}>↺ Сбросить</button>
-              <button className="primary-action deal-primary" onClick={stage === "agreement" ? beginFreeSeating : beginFirstSpeech} disabled={seconds > 0}>
-                <span><small>{seconds > 0 ? "Дождитесь окончания отсчёта" : "Следующий таймер запустится автоматически"}</small>{stage === "agreement" ? "Свободная посадка · 40" : "В городе утро · речь №1"}</span><strong>→</strong>
+              <button className="primary-action deal-primary" onClick={stage === "agreement" ? beginFreeSeating : enterMorningReady}>
+                <span><small>{stage === "agreement" ? seconds > 0 ? "Остановить договорку и перейти дальше" : "Таймер посадки запустится автоматически" : seconds > 0 ? "Остановить отсчёт и перейти дальше" : "Речь №1 пока не запустится"}</small>{stage === "agreement" ? seconds > 0 ? "Пропустить · посадка 40" : "Свободная посадка · 40" : seconds > 0 ? "Пропустить · в город утро" : "В город утро"}</span><strong>→</strong>
+              </button>
+            </section>
+          )}
+
+          {stage === "morningReady" && (
+            <section className="deal-panel morning-ready">
+              <div className="morning-mark"><span aria-hidden="true">1</span></div>
+              <span className="deal-eyebrow">В городе утро</span>
+              <h1>Речь игрока №1</h1>
+              <p>Таймер ещё не запущен. Начните речь только когда стол и ведущий готовы.</p>
+              <div className="speech-rule-card"><span>Обычная речь</span><strong>50 секунд</strong><small>после трёх фолов следующая речь — 30 секунд</small></div>
+              <button className="primary-action deal-primary" onClick={beginFirstSpeech}>
+                <span><small>Таймер запустится по команде ведущего</small>Начать речь №1 · 50</span><strong>→</strong>
               </button>
             </section>
           )}
@@ -1064,7 +1316,10 @@ export default function Home() {
   let stageNote = "";
   if (stage === "speech") {
     stageLabel = `Речь ${Math.min(spokenSeats.length + 1, speechOrder.length)} из ${speechOrder.length}`;
-    stageNote = `Круг начал №${roundStarter}`;
+    stageNote = timerBaseSeconds === 30 ? "3 фола · 30 секунд" : `Круг начал №${roundStarter}`;
+  } else if (stage === "farewellSpeech") {
+    stageLabel = farewellState?.reason === "shot" ? "Речь убитого игрока" : "Речь заголосованного";
+    stageNote = farewellState ? `${farewellState.index + 1} из ${farewellState.seats.length} · 60 секунд` : "60 секунд";
   } else if (stage === "vote") {
     stageLabel = `Голосование ${voteState.index + 1} из ${voteState.candidates.length}`;
     stageNote = `Кандидат №${currentCandidate}`;
@@ -1101,10 +1356,14 @@ export default function Home() {
         : "Зафиксировать и подвести итог"
       : stage === "tieSpeech"
         ? tieSpeechIndex < tieSeats.length - 1 ? `Следующая речь: №${tieSeats[tieSpeechIndex + 1]}` : "К переголосованию"
+        : stage === "farewellSpeech"
+          ? farewellState && farewellState.index < farewellState.seats.length - 1
+            ? `Следующая речь: №${farewellState.seats[farewellState.index + 1]}`
+            : farewellState?.after === "night" ? "Закончить речь · к ночи" : `К речи игрока №${roundStarter}`
         : stage === "lift"
           ? "Зафиксировать решение"
           : stage === "nightSummary"
-            ? `Начать круг ${round + 1}`
+            ? shotResult ? `Речь убитого №${shotResult} · 60` : `Начать круг ${round + 1}`
             : stage === "nightShot"
               ? nightShotChoice === "miss" ? "Зафиксировать промах" : typeof nightShotChoice === "number" ? `Подтвердить отстрел №${nightShotChoice}` : "Выберите игрока или промах"
               : stage === "nightDon"
@@ -1113,6 +1372,8 @@ export default function Home() {
 
   const onPrimary = stage === "speech"
     ? advanceSpeech
+    : stage === "farewellSpeech"
+      ? advanceFarewell
     : stage === "vote"
       ? confirmVotes
       : stage === "tieSpeech"
@@ -1126,7 +1387,11 @@ export default function Home() {
               : confirmNightStep;
   const primaryDisabled = stage === "nightShot" && nightShotChoice === null;
 
-  const timedLabel = stage === "speech" ? `Говорит игрок №${currentSeat}` : `Попил · игрок №${currentSeat}`;
+  const timedLabel = stage === "speech"
+    ? `Говорит игрок №${currentSeat}${timerBaseSeconds === 30 ? " · 3 фола" : ""}`
+    : stage === "farewellSpeech"
+      ? `${farewellState?.reason === "shot" ? "Убит" : "Заголосован"} · игрок №${currentSeat}`
+      : `Попил · игрок №${currentSeat}`;
   const timerStatus = seconds === 0 ? "Время вышло" : running ? "таймер идёт" : "готов к старту";
 
   return (
@@ -1198,21 +1463,20 @@ export default function Home() {
               const isTarget = stage === "nightShot" ? nightShotChoice === player.seat : (stage === "nightDon" || stage === "nightSheriff") && nightTarget === player.seat;
               const isCandidate = (stage === "vote" || stage === "revote") && currentCandidate === player.seat;
               const isSelected = stage === "speech" && selectedSeat === player.seat;
+              const isCurrentSpeaker = (stage === "speech" || stage === "farewellSpeech") && currentSeat === player.seat;
               const marker = lockedCandidate !== null ? `→${lockedCandidate}` : draftVote ? "✓" : liftVote ? "ЗА" : isTarget ? stage === "nightShot" ? "ОТСТРЕЛ" : "ПРОВЕРКА" : null;
               return (
                 <button
                   key={player.seat}
-                  className={`table-seat seat-${player.seat} ${isSelected ? "is-selected" : ""} ${stage === "speech" && currentSeat === player.seat ? "is-current" : ""} ${player.nomination ? "is-nominated" : ""} ${isCandidate ? "is-candidate" : ""} ${draftVote || liftVote ? "is-draft-vote" : ""} ${isTarget ? "is-night-target" : ""} ${lockedCandidate !== null ? "has-voted" : ""} ${!player.alive ? "is-eliminated" : ""}`}
-                  disabled={!player.alive && stage === "speech"}
-                  aria-disabled={lockedCandidate !== null || !player.alive}
+                  className={`table-seat seat-${player.seat} ${isSelected ? "is-selected" : ""} ${isCurrentSpeaker ? "is-current" : ""} ${player.nomination ? "is-nominated" : ""} ${isCandidate ? "is-candidate" : ""} ${draftVote || liftVote ? "is-draft-vote" : ""} ${isTarget ? "is-night-target" : ""} ${lockedCandidate !== null ? "has-voted" : ""} ${!player.alive ? "is-eliminated" : ""}`}
+                  aria-disabled={lockedCandidate !== null || (!player.alive && stage !== "speech")}
                   onClick={() => handleSeatClick(player.seat)}
                   aria-label={`Игрок №${player.seat}, ${player.name}${lockedCandidate !== null ? `, голос за игрока №${lockedCandidate} зафиксирован` : ""}`}
                 >
-                  {player.nomination && <span className="ballot-order">{player.nomination}</span>}
                   {marker && <span className={`seat-state ${lockedCandidate !== null ? "is-locked" : ""}`}>{marker}</span>}
                   <strong>{player.seat}</strong>
                   <span className="seat-name">{player.name}</span>
-                  {!player.alive ? <span className="out-label">вне игры</span> : <FoulMarks count={player.fouls} />}
+                  {!player.alive ? <span className="out-label">вне игры</span> : <span className="seat-penalties"><FoulMarks count={player.fouls} />{player.yellowCards > 0 && <YellowMarks count={player.yellowCards} />}</span>}
                 </button>
               );
             })}
@@ -1221,12 +1485,12 @@ export default function Home() {
           <div className="master-seat" aria-label="Место ведущего"><span className="master-line" /><span className="master-avatar">M</span><span className="master-copy"><strong>Ведущий</strong><small>ваше место</small></span></div>
         </section>
 
-        {nominees.length > 0 && !stage.startsWith("night") && (
+        {nominees.length > 0 && !stage.startsWith("night") && stage !== "farewellSpeech" && (
           <section className="candidate-queue" aria-label="Очередь кандидатур">
-            <div><span>Кандидаты</span><strong>{nominees.length} по порядку</strong></div>
-            <ol>{nominees.map((player, index) => {
+            <div><span>Кандидаты</span></div>
+            <ol>{nominees.map((player) => {
               const confirmedCount = voteState.confirmed[player.seat]?.length;
-              return <li key={player.seat} className={currentCandidate === player.seat ? "is-current" : confirmedCount !== undefined ? "is-done" : ""}><span>{index + 1}</span><strong>№{player.seat}</strong><small>{confirmedCount !== undefined ? `${confirmedCount} гол.` : `от №${player.nominatedBy}`}</small></li>;
+              return <li key={player.seat} className={currentCandidate === player.seat ? "is-current" : confirmedCount !== undefined ? "is-done" : ""}><strong>{player.seat}</strong></li>;
             })}</ol>
           </section>
         )}
@@ -1237,15 +1501,22 @@ export default function Home() {
               <div className="selected-player">
                 <div className="selected-number">{selectedPlayer.seat}</div>
                 <div className="selected-copy"><span>{selectedSeat === currentSeat ? "Сейчас говорит" : "Действия с игроком"}</span><strong>{selectedPlayer.name}</strong></div>
-                <div className="selected-fouls"><span>{selectedPlayer.fouls} / 4 фола</span><FoulMarks count={selectedPlayer.fouls} /></div>
+                <div className="selected-fouls"><span>{selectedPlayer.fouls} / 4 фола</span><FoulMarks count={selectedPlayer.fouls} /><small>ЖК {selectedPlayer.yellowCards} / 2</small></div>
               </div>
               <div className="quick-actions">
-                <button onClick={addFoul} disabled={!selectedPlayer.alive}><span>+</span><strong>Фол №{selectedSeat}</strong></button>
-                <button onClick={toggleNomination} disabled={!selectedPlayer.alive}><span>{selectedPlayer.nomination ? "✓" : currentNomination ? "1" : "↓"}</span><strong>{selectedPlayer.nomination ? "Уже в списке" : currentNomination ? `№${currentSeat} → №${currentNomination.seat}` : `Выставить №${selectedSeat}`}</strong></button>
-                <button onClick={buyTime} disabled={!currentPlayer.alive}><span>+30</span><strong>№{currentSeat} · 2 фола</strong></button>
+                <div className="foul-stepper">
+                  <button onClick={removeFoul} disabled={selectedPlayer.fouls === 0} aria-label={`Снять фол у игрока №${selectedSeat}`}><span>−</span></button>
+                  <div><small>Фолы · №{selectedSeat}</small><strong>{selectedPlayer.fouls} / 4</strong></div>
+                  <button onClick={addFoul} disabled={!selectedPlayer.alive || selectedPlayer.fouls >= 4} aria-label={`Добавить фол игроку №${selectedSeat}`}><span>+</span></button>
+                </div>
+                <button onClick={toggleNomination} disabled={!selectedPlayer.alive || selectedPlayer.nomination !== null || Boolean(currentNomination)}><span>{selectedPlayer.nomination || currentNomination ? "✓" : "↓"}</span><strong>{selectedPlayer.nomination ? "Уже в списке" : currentNomination ? "Кандидат выставлен" : `Выставить №${selectedSeat}`}</strong></button>
+                <button className="yellow-action" onClick={addYellowCard} disabled={!selectedPlayer.alive || selectedPlayer.yellowCards >= 2}><span>▰</span><strong>Жёлтая · {selectedPlayer.yellowCards}/2</strong></button>
+                <button className="buy-time-action" onClick={buyTime} disabled={!currentPlayer.alive}><span>+30</span><strong>Речь №{currentSeat} · 2 фола</strong></button>
               </div>
             </>
           )}
+
+          {stage === "farewellSpeech" && <div className="simple-instruction farewell-instruction"><span>{farewellState?.reason === "shot" ? "Убитый игрок" : "По результату голосования"}</span><strong>Игрок №{currentSeat} · 60 секунд</strong><small>После прощальной речи приложение продолжит сценарий</small></div>}
 
           {(stage === "vote" || stage === "revote") && (
             <div className="vote-panel">
@@ -1265,7 +1536,7 @@ export default function Home() {
           })}<div className="night-outcome"><strong>Утром</strong><span>{shotResult ? `выбывает №${shotResult}` : "никто не выбывает"}</span></div></div>}
 
           <button className="primary-action" onClick={onPrimary} disabled={primaryDisabled}>
-            <span><small>{stage === "speech" ? "Речи идут по часовой стрелке" : stage === "vote" || stage === "revote" ? `${voteState.draft.length} ${voteWord(voteState.draft.length)} будет зафиксировано` : "Следующий этап откроется автоматически"}</small>{primaryLabel}</span>
+            <span><small>{stage === "speech" ? "Речи идут по часовой стрелке" : stage === "farewellSpeech" ? "Прощальная речь длится 60 секунд" : stage === "vote" || stage === "revote" ? `${voteState.draft.length} ${voteWord(voteState.draft.length)} будет зафиксировано` : "Следующий этап откроется автоматически"}</small>{primaryLabel}</span>
             <strong>→</strong>
           </button>
         </section>
