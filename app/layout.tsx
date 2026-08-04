@@ -1,6 +1,6 @@
+/* eslint-disable @next/next/no-sync-scripts */
 import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
-import Script from "next/script";
 import "./globals.css";
 
 export const viewport: Viewport = {
@@ -37,9 +37,9 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="ru">
+    <html lang="ru" suppressHydrationWarning>
       <head>
-        <Script src="https://telegram.org/js/telegram-web-app.js?63" strategy="beforeInteractive" />
+        <script src="https://telegram.org/js/telegram-web-app.js?63" />
       </head>
       <body>{children}</body>
     </html>
