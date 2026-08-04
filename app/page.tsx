@@ -258,6 +258,7 @@ export default function Home() {
   const [appViewedCount, setAppViewedCount] = useState(0);
   const [roleRevealed, setRoleRevealed] = useState(false);
   const [masterSummaryVisible, setMasterSummaryVisible] = useState(false);
+  const [rolesVisible, setRolesVisible] = useState(false);
   const [day, setDay] = useState(1);
   const [round, setRound] = useState(1);
   const [roundStarter, setRoundStarter] = useState(1);
@@ -634,6 +635,7 @@ export default function Home() {
     setNightRecords([]);
     setFarewellState(null);
     setNominationRecords([]);
+    setRolesVisible(false);
     setEventLog(["Первая ночь · договорка 60 секунд"]);
     setHistory([]);
     startCountdown(60);
@@ -1425,7 +1427,16 @@ export default function Home() {
               <span>MAFIA MASTER · ИГРА 024</span>
               <strong>День {day} · круг {round}</strong>
             </div>
-            <div className="app-brand">M</div>
+            <button
+              className={`roles-toggle ${rolesVisible ? "is-active" : ""}`}
+              type="button"
+              aria-pressed={rolesVisible}
+              aria-label={rolesVisible ? "Скрыть роли игроков" : "Показать роли игроков"}
+              onClick={() => setRolesVisible((current) => !current)}
+            >
+              <span className="roles-eye" aria-hidden="true" />
+              <strong>{rolesVisible ? "Скрыть" : "Роли"}</strong>
+            </button>
           </div>
           <div className="stage-status" aria-live="polite">
             <span className="stage-dot" />
@@ -1489,10 +1500,13 @@ export default function Home() {
                   className={`table-seat seat-${player.seat} ${isSelected ? "is-selected" : ""} ${isCurrentSpeaker ? "is-current" : ""} ${player.nomination ? "is-nominated" : ""} ${isCandidate ? "is-candidate" : ""} ${draftVote || liftVote ? "is-draft-vote" : ""} ${isTarget ? "is-night-target" : ""} ${lockedCandidate !== null ? "has-voted" : ""} ${!player.alive ? "is-eliminated" : ""}`}
                   aria-disabled={lockedCandidate !== null || (!player.alive && stage !== "speech")}
                   onClick={() => handleSeatClick(player.seat)}
-                  aria-label={`Игрок №${player.seat}, ${player.name}${lockedCandidate !== null ? `, голос за игрока №${lockedCandidate} зафиксирован` : ""}`}
+                  aria-label={`Игрок №${player.seat}, ${player.name}${rolesVisible && player.role ? `, роль ${player.role}` : ""}${lockedCandidate !== null ? `, голос за игрока №${lockedCandidate} зафиксирован` : ""}`}
                 >
                   {marker && <span className={`seat-state ${lockedCandidate !== null ? "is-locked" : ""}`}>{marker}</span>}
-                  <strong>{player.seat}</strong>
+                  <span className="seat-number-row">
+                    <strong>{player.seat}</strong>
+                    {rolesVisible && player.role && <span aria-hidden="true"><RoleGlyph role={player.role} className="seat-role-glyph" /></span>}
+                  </span>
                   <span className="seat-name">{player.name}</span>
                   {!player.alive ? <span className="out-label">вне игры</span> : <span className="seat-penalties"><FoulMarks count={player.fouls} />{player.yellowCards > 0 && <YellowMarks count={player.yellowCards} />}</span>}
                 </button>

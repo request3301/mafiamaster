@@ -179,6 +179,58 @@ button:focus-visible {
   justify-self: end;
 }
 
+.roles-toggle {
+  display: grid;
+  width: 68px;
+  min-height: 38px;
+  grid-template-columns: 19px 1fr;
+  align-items: center;
+  gap: 5px;
+  justify-self: end;
+  padding: 0 7px;
+  border: 1px solid rgba(239, 231, 200, 0.12);
+  border-radius: 12px;
+  color: #aeb49d;
+  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+  transition: border-color 0.16s ease, color 0.16s ease, background 0.16s ease, box-shadow 0.16s ease;
+}
+
+.roles-toggle strong {
+  font-size: 7px;
+  font-weight: 900;
+  letter-spacing: 0.03em;
+}
+
+.roles-eye {
+  position: relative;
+  display: block;
+  width: 17px;
+  height: 11px;
+  transform: rotate(45deg);
+  border: 1.5px solid currentColor;
+  border-radius: 75% 18%;
+}
+
+.roles-eye::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 5px;
+  height: 5px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.roles-toggle.is-active {
+  border-color: rgba(216, 233, 142, 0.42);
+  color: #273019;
+  background: linear-gradient(145deg, #e4efa8, #b8ca70);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2), inset 0 1px rgba(255, 255, 255, 0.5);
+}
+
 .stage-status {
   display: grid;
   min-height: 48px;
@@ -522,6 +574,22 @@ button:focus-visible {
   font-size: clamp(21px, 6vw, 26px);
   font-weight: 500;
   line-height: 0.92;
+}
+
+.seat-number-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+}
+
+.seat-role-glyph {
+  --s: 16px;
+  vertical-align: middle;
+}
+
+.seat-role-glyph.role-citizen .role-icon {
+  border-width: 2px;
 }
 
 .seat-name {
@@ -2624,6 +2692,19 @@ button:focus-visible {
     font-size: 18px;
   }
 
+  .roles-toggle {
+    width: 64px;
+    min-height: 34px;
+    grid-template-columns: 17px 1fr;
+    gap: 4px;
+    padding: 0 6px;
+  }
+
+  .roles-eye {
+    width: 15px;
+    height: 10px;
+  }
+
   .game-heading strong {
     font-size: 16px;
   }
@@ -2652,6 +2733,14 @@ button:focus-visible {
     width: 48px;
     min-height: 48px;
     border-radius: 13px;
+  }
+
+  .seat-role-glyph {
+    --s: 14px;
+  }
+
+  .seat-role-glyph.role-citizen .role-icon {
+    border-width: 2px;
   }
 
   .timer-orbit {
