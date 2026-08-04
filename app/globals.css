@@ -386,6 +386,19 @@ button:focus-visible {
   --timer-accent: #e9aa55;
 }
 
+.game-app.stage-nightDon {
+  --timer-accent: var(--role-don);
+}
+
+.game-app.stage-nightSheriff {
+  --timer-accent: var(--role-sheriff);
+}
+
+.game-app.stage-nightDon.is-warning,
+.game-app.stage-nightSheriff.is-warning {
+  --timer-accent: #e9aa55;
+}
+
 .game-app.is-warning .timer-face time,
 .game-app.is-warning .center-kicker {
   color: #ffd18e;

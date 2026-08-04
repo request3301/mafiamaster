@@ -319,7 +319,8 @@ export default function Home() {
   const isLastSpeech = nextSpeechSeat === null;
   const currentCandidate = voteState.candidates[voteState.index] ?? null;
   const lockedVoters = Object.values(voteState.confirmed).flat();
-  const isTimedStage = stage === "agreement" || stage === "freeSeating" || stage === "speech" || stage === "tieSpeech" || stage === "farewellSpeech";
+  const isNightCheckStage = stage === "nightDon" || stage === "nightSheriff";
+  const isTimedStage = stage === "agreement" || stage === "freeSeating" || stage === "speech" || stage === "tieSpeech" || stage === "farewellSpeech" || isNightCheckStage;
   const timerLimit = timerBaseSeconds;
   const timerProgress = Math.max(0, Math.min(100, (seconds / Math.max(1, timerTotalSeconds)) * 100));
   const isWarning = isTimedStage && seconds <= 10;
@@ -809,7 +810,11 @@ export default function Home() {
     setNightTarget(nightPlayers.find((player) => player.alive && player.seat !== firstChecker)?.seat ?? firstChecker);
     setNightShotChoice(null);
     setNightRecords([]);
-    setRunning(false);
+    if (nextNightStage === "nightDon" || nextNightStage === "nightSheriff") {
+      startCountdown(15);
+    } else {
+      setRunning(false);
+    }
   };
 
   const beginFarewell = (seats: number[], reason: "vote" | "shot", after: "night" | "round", roster: Player[] = players) => {
@@ -1038,13 +1043,16 @@ export default function Home() {
       if (don) {
         setStage("nightDon");
         setNightTarget(players.find((player) => player.alive && player.seat !== don.seat)?.seat ?? 1);
+        startCountdown(15);
         setToast("Отстрел записан · проверка Дона");
       } else if (sheriff) {
         setStage("nightSheriff");
         setNightTarget(players.find((player) => player.alive && player.seat !== sheriff.seat)?.seat ?? 1);
+        startCountdown(15);
         setToast("Отстрел записан · проверка Шерифа");
       } else {
         setStage("nightSummary");
+        setRunning(false);
       }
     } else if (stage === "nightDon") {
       if (!checkActor || nightTarget === checkActor) {
@@ -1058,9 +1066,11 @@ export default function Home() {
       if (sheriff) {
         setStage("nightSheriff");
         setNightTarget(players.find((player) => player.alive && player.seat !== sheriff.seat)?.seat ?? 1);
+        startCountdown(15);
         setToast(`${result} · теперь проверка Шерифа`);
       } else {
         setStage("nightSummary");
+        setRunning(false);
       }
     } else if (stage === "nightSheriff") {
       if (!checkActor || nightTarget === checkActor) {
@@ -1072,6 +1082,7 @@ export default function Home() {
       setNightRecords((current) => [...current, { type: "sheriff", target: nightTarget, result }]);
       addLog(`Проверка Шерифа: №${nightTarget} · ${result}`);
       setStage("nightSummary");
+      setRunning(false);
       setToast(`${result} · итоги ночи`);
     }
   };
@@ -1340,10 +1351,10 @@ export default function Home() {
     stageNote = nightShotChoice === "miss" ? "Выбран промах" : typeof nightShotChoice === "number" ? `Выбывает №${nightShotChoice}` : "Выберите исход";
   } else if (stage === "nightDon") {
     stageLabel = "Ночь · проверка Дона";
-    stageNote = currentCheckResult.toUpperCase();
+    stageNote = `15 секунд · ${currentCheckResult.toUpperCase()}`;
   } else if (stage === "nightSheriff") {
     stageLabel = "Ночь · проверка Шерифа";
-    stageNote = currentCheckResult.toUpperCase();
+    stageNote = `15 секунд · ${currentCheckResult.toUpperCase()}`;
   } else {
     stageLabel = "Итоги ночи";
     stageNote = shotResult ? `Выбывает №${shotResult}` : shotRecord ? "Промах" : "Без отстрела";
@@ -1394,7 +1405,11 @@ export default function Home() {
     ? `Говорит игрок №${currentSeat}${timerBaseSeconds === 30 ? " · 3 фола" : ""}`
     : stage === "farewellSpeech"
       ? `${farewellState?.reason === "shot" ? "Убит" : "Заголосован"} · игрок №${currentSeat}`
-      : `Попил · игрок №${currentSeat}`;
+      : stage === "nightDon"
+        ? `Дон · проверка игрока №${nightTarget}`
+        : stage === "nightSheriff"
+          ? `Шериф · проверка игрока №${nightTarget}`
+          : `Попил · игрок №${currentSeat}`;
   const timerStatus = seconds === 0 ? "Время вышло" : running ? "таймер идёт" : "готов к старту";
 
   return (
@@ -1539,7 +1554,7 @@ export default function Home() {
           })}<div className="night-outcome"><strong>Утром</strong><span>{shotResult ? `выбывает №${shotResult}` : "никто не выбывает"}</span></div></div>}
 
           <button className="primary-action" onClick={onPrimary} disabled={primaryDisabled}>
-            <span><small>{stage === "speech" ? "Речи идут по часовой стрелке" : stage === "farewellSpeech" ? "Прощальная речь длится 60 секунд" : stage === "vote" || stage === "revote" ? `${voteState.draft.length} ${voteWord(voteState.draft.length)} будет зафиксировано` : "Следующий этап откроется автоматически"}</small>{primaryLabel}</span>
+            <span><small>{stage === "speech" ? "Речи идут по часовой стрелке" : stage === "farewellSpeech" ? "Прощальная речь длится 60 секунд" : stage === "vote" || stage === "revote" ? `${voteState.draft.length} ${voteWord(voteState.draft.length)} будет зафиксировано` : isNightCheckStage ? "На проверку отведено 15 секунд" : "Следующий этап откроется автоматически"}</small>{primaryLabel}</span>
             <strong>→</strong>
           </button>
         </section>
