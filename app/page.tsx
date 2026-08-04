@@ -107,8 +107,6 @@ type TelegramWebApp = {
   setHeaderColor?: (color: string) => void;
   setBackgroundColor?: (color: string) => void;
   setBottomBarColor?: (color: string) => void;
-  enableClosingConfirmation?: () => void;
-  disableClosingConfirmation?: () => void;
 };
 
 declare global {
@@ -278,7 +276,7 @@ export default function Home() {
   const [nominationRecords, setNominationRecords] = useState<NominationRecord[]>([]);
   const [eventLog, setEventLog] = useState<string[]>(["Выберите способ раздачи ролей"]);
   const [history, setHistory] = useState<UndoEntry[]>([]);
-  const [toast, setToast] = useState<string | null>(null);
+  const [, setToast] = useState<string | null>(null);
   const deadlineRef = useRef(0);
   const manualAssignLockRef = useRef(false);
 
@@ -292,14 +290,6 @@ export default function Home() {
     webApp.expand();
     webApp.ready();
   }, []);
-
-  useEffect(() => {
-    const webApp = window.Telegram?.WebApp;
-    if (!webApp) return;
-
-    if (stage === "dealChoice") webApp.disableClosingConfirmation?.();
-    else webApp.enableClosingConfirmation?.();
-  }, [stage]);
 
   const selectedPlayer = players.find((player) => player.seat === selectedSeat) ?? players[0];
   const currentPlayer = players.find((player) => player.seat === currentSeat) ?? players[0];
@@ -1306,7 +1296,6 @@ export default function Home() {
             </section>
           )}
 
-          {toast && <div className="toast" role="status"><span>{toast}</span><button onClick={() => setToast(null)} aria-label="Закрыть сообщение">×</button></div>}
         </section>
       </main>
     );
@@ -1541,7 +1530,6 @@ export default function Home() {
           </button>
         </section>
 
-        {toast && <div className="toast" role="status"><span>{toast}</span><button onClick={() => setToast(null)} aria-label="Закрыть сообщение">×</button></div>}
       </section>
     </main>
   );
