@@ -11,17 +11,17 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     metadataBase: new URL(origin),
     title: "Mafia Master — пульт ведущего",
-    description: "Автоматический пульт ведущего спортивной мафии: речи по кругу, голосование, попил, ночь и откат действий.",
+    description: "Пульт ведущего спортивной мафии: раздача ролей, речи по кругу, голосование, проверки, ночь и откат действий.",
     openGraph: {
       title: "Mafia Master — пульт ведущего",
-      description: "Партия идёт по сценарию автоматически — ведущий подтверждает только следующий шаг.",
+      description: "Раздайте роли в приложении или своей колодой, затем проведите партию по автоматическому сценарию.",
       type: "website",
       images: [{ url: `${origin}/og.png`, width: 1672, height: 941, alt: "Mafia Master — пульт ведущего" }],
     },
     twitter: {
       card: "summary_large_image",
       title: "Mafia Master — пульт ведущего",
-      description: "Партия идёт по сценарию автоматически — ведущий подтверждает только следующий шаг.",
+      description: "Раздайте роли в приложении или своей колодой, затем проведите партию по автоматическому сценарию.",
       images: [`${origin}/og.png`],
     },
   };

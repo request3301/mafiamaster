@@ -3,6 +3,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 type Stage =
+  | "dealChoice"
+  | "appDeal"
+  | "manualDeal"
+  | "dealReady"
   | "speech"
   | "vote"
   | "tieSpeech"
@@ -14,14 +18,16 @@ type Stage =
   | "nightSummary";
 
 type Role = "Мирный" | "Мафия" | "Дон" | "Шериф";
+type DealMethod = "app" | "cards" | null;
 type VoteMap = Record<number, number[]>;
 
 type Player = {
   seat: number;
   name: string;
-  role: Role;
+  role: Role | null;
   fouls: number;
   nomination: number | null;
+  nominatedBy: number | null;
   alive: boolean;
 };
 
@@ -33,15 +39,19 @@ type VoteState = {
   draft: number[];
 };
 
-type NightRecord = {
-  type: "shot" | "don" | "sheriff";
-  actor: number;
-  target: number;
-};
+type NightRecord =
+  | { type: "shot"; target: number | null }
+  | { type: "don"; target: number; result: "Шериф" | "Не шериф" }
+  | { type: "sheriff"; target: number; result: "Мафия" | "Мирный" };
 
 type GameSnapshot = {
   players: Player[];
   stage: Stage;
+  dealMethod: DealMethod;
+  dealIndex: number;
+  appViewedCount: number;
+  roleRevealed: boolean;
+  manualRoleSelection: Role | null;
   day: number;
   round: number;
   roundStarter: number;
@@ -53,8 +63,8 @@ type GameSnapshot = {
   tieSeats: number[];
   tieSpeechIndex: number;
   liftDraft: number[];
-  nightShotIndex: number;
   nightTarget: number;
+  nightShotChoice: number | "miss" | null;
   nightRecords: NightRecord[];
   eventLog: string[];
 };
@@ -65,17 +75,37 @@ type UndoEntry = {
 };
 
 const initialPlayers: Player[] = [
-  { seat: 1, name: "Анна", role: "Мирный", fouls: 0, nomination: null, alive: true },
-  { seat: 2, name: "Борис", role: "Мафия", fouls: 1, nomination: 1, alive: true },
-  { seat: 3, name: "Вика", role: "Мирный", fouls: 0, nomination: null, alive: true },
-  { seat: 4, name: "Глеб", role: "Шериф", fouls: 2, nomination: null, alive: true },
-  { seat: 5, name: "Дана", role: "Мирный", fouls: 0, nomination: 2, alive: true },
-  { seat: 6, name: "Егор", role: "Мирный", fouls: 1, nomination: null, alive: true },
-  { seat: 7, name: "Жанна", role: "Дон", fouls: 0, nomination: null, alive: true },
-  { seat: 8, name: "Илья", role: "Мафия", fouls: 1, nomination: 3, alive: true },
-  { seat: 9, name: "Кира", role: "Мирный", fouls: 0, nomination: null, alive: true },
-  { seat: 10, name: "Лев", role: "Мирный", fouls: 0, nomination: null, alive: true },
+  { seat: 1, name: "Анна", role: null, fouls: 0, nomination: null, nominatedBy: null, alive: true },
+  { seat: 2, name: "Борис", role: null, fouls: 0, nomination: null, nominatedBy: null, alive: true },
+  { seat: 3, name: "Вика", role: null, fouls: 0, nomination: null, nominatedBy: null, alive: true },
+  { seat: 4, name: "Глеб", role: null, fouls: 0, nomination: null, nominatedBy: null, alive: true },
+  { seat: 5, name: "Дана", role: null, fouls: 0, nomination: null, nominatedBy: null, alive: true },
+  { seat: 6, name: "Егор", role: null, fouls: 0, nomination: null, nominatedBy: null, alive: true },
+  { seat: 7, name: "Жанна", role: null, fouls: 0, nomination: null, nominatedBy: null, alive: true },
+  { seat: 8, name: "Илья", role: null, fouls: 0, nomination: null, nominatedBy: null, alive: true },
+  { seat: 9, name: "Кира", role: null, fouls: 0, nomination: null, nominatedBy: null, alive: true },
+  { seat: 10, name: "Лев", role: null, fouls: 0, nomination: null, nominatedBy: null, alive: true },
 ];
+
+const standardRoles: Role[] = [
+  "Мирный", "Мирный", "Мирный", "Мирный", "Мирный", "Мирный",
+  "Мафия", "Мафия", "Дон", "Шериф",
+];
+
+const roleLimits: Record<Role, number> = { Мирный: 6, Мафия: 2, Дон: 1, Шериф: 1 };
+const roleDescriptions: Record<Role, string> = {
+  Мирный: "Найдите чёрную команду за столом",
+  Мафия: "Играйте вместе с Доном и мафией",
+  Дон: "Возглавьте мафию и найдите Шерифа",
+  Шериф: "Проверяйте игроков и найдите мафию",
+};
+const roleClassNames: Record<Role, string> = {
+  Мирный: "citizen",
+  Мафия: "mafia",
+  Дон: "don",
+  Шериф: "sheriff",
+};
+const roleOptions: Role[] = ["Мирный", "Мафия", "Дон", "Шериф"];
 
 const emptyVoteState: VoteState = {
   candidates: [],
@@ -86,6 +116,17 @@ const emptyVoteState: VoteState = {
 };
 
 const seatOrder = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+
+function shuffleRoles() {
+  const roles = [...standardRoles];
+  const randomValues = new Uint32Array(roles.length);
+  globalThis.crypto.getRandomValues(randomValues);
+  for (let index = roles.length - 1; index > 0; index -= 1) {
+    const next = randomValues[index] % (index + 1);
+    [roles[index], roles[next]] = [roles[next], roles[index]];
+  }
+  return roles;
+}
 
 function FoulMarks({ count }: { count: number }) {
   return (
@@ -132,7 +173,12 @@ function leadersFor(candidates: number[], votes: VoteMap) {
 
 export default function Home() {
   const [players, setPlayers] = useState(initialPlayers);
-  const [stage, setStage] = useState<Stage>("speech");
+  const [stage, setStage] = useState<Stage>("dealChoice");
+  const [dealMethod, setDealMethod] = useState<DealMethod>(null);
+  const [dealIndex, setDealIndex] = useState(0);
+  const [appViewedCount, setAppViewedCount] = useState(0);
+  const [roleRevealed, setRoleRevealed] = useState(false);
+  const [manualRoleSelection, setManualRoleSelection] = useState<Role | null>(null);
   const [day, setDay] = useState(1);
   const [round, setRound] = useState(1);
   const [roundStarter, setRoundStarter] = useState(1);
@@ -145,10 +191,10 @@ export default function Home() {
   const [tieSeats, setTieSeats] = useState<number[]>([]);
   const [tieSpeechIndex, setTieSpeechIndex] = useState(0);
   const [liftDraft, setLiftDraft] = useState<number[]>([]);
-  const [nightShotIndex, setNightShotIndex] = useState(0);
   const [nightTarget, setNightTarget] = useState(6);
+  const [nightShotChoice, setNightShotChoice] = useState<number | "miss" | null>(null);
   const [nightRecords, setNightRecords] = useState<NightRecord[]>([]);
-  const [eventLog, setEventLog] = useState<string[]>(["Круг 1 начался с игрока №1"]);
+  const [eventLog, setEventLog] = useState<string[]>(["Выберите способ раздачи ролей"]);
   const [history, setHistory] = useState<UndoEntry[]>([]);
   const [toast, setToast] = useState<string | null>(null);
   const deadlineRef = useRef(0);
@@ -160,6 +206,7 @@ export default function Home() {
     () => players.filter((player) => player.alive && player.nomination !== null).sort((a, b) => a.nomination! - b.nomination!),
     [players],
   );
+  const currentNomination = players.find((player) => player.nominatedBy === currentSeat) ?? null;
   const speechOrder = orderedAliveFrom(roundStarter, players);
   const remainingSpeechSeats = speechOrder.filter((seat) => !spokenSeats.includes(seat) && seat !== currentSeat);
   const nextSpeechSeat = remainingSpeechSeats[0] ?? null;
@@ -171,22 +218,28 @@ export default function Home() {
   const timerLimit = stage === "tieSpeech" ? 30 : 60;
   const timerProgress = Math.max(0, Math.min(100, (seconds / Math.max(timerLimit, seconds)) * 100));
   const isWarning = isTimedStage && seconds <= 10;
-  const mafiaActors = players.filter((player) => player.alive && (player.role === "Мафия" || player.role === "Дон"));
   const don = players.find((player) => player.alive && player.role === "Дон");
   const sheriff = players.find((player) => player.alive && player.role === "Шериф");
-  const nightActor = stage === "nightShot"
-    ? mafiaActors[nightShotIndex]?.seat ?? mafiaActors[0]?.seat ?? 0
-    : stage === "nightDon"
-      ? don?.seat ?? 0
-      : sheriff?.seat ?? 0;
-  const shotRecords = nightRecords.filter((record) => record.type === "shot");
-  const shotResult = shotRecords.length > 0 && shotRecords.every((record) => record.target === shotRecords[0].target)
-    ? shotRecords[0].target
-    : null;
+  const checkActor = stage === "nightDon" ? don?.seat ?? 0 : sheriff?.seat ?? 0;
+  const shotRecord = nightRecords.find((record) => record.type === "shot");
+  const shotResult = shotRecord?.type === "shot" ? shotRecord.target : null;
+  const targetRole = players.find((player) => player.seat === nightTarget)?.role;
+  const currentCheckResult = stage === "nightDon"
+    ? targetRole === "Шериф" ? "Шериф" : "Не шериф"
+    : targetRole === "Мафия" || targetRole === "Дон" ? "Мафия" : "Мирный";
+  const assignedRoleCounts = standardRoles.reduce<Record<Role, number>>((counts, role) => {
+    counts[role] = players.filter((player) => player.role === role).length;
+    return counts;
+  }, { Мирный: 0, Мафия: 0, Дон: 0, Шериф: 0 });
 
   const captureSnapshot = (): GameSnapshot => ({
     players,
     stage,
+    dealMethod,
+    dealIndex,
+    appViewedCount,
+    roleRevealed,
+    manualRoleSelection,
     day,
     round,
     roundStarter,
@@ -198,8 +251,8 @@ export default function Home() {
     tieSeats,
     tieSpeechIndex,
     liftDraft,
-    nightShotIndex,
     nightTarget,
+    nightShotChoice,
     nightRecords,
     eventLog,
   });
@@ -226,6 +279,11 @@ export default function Home() {
   const restoreSnapshot = (snapshot: GameSnapshot) => {
     setPlayers(snapshot.players);
     setStage(snapshot.stage);
+    setDealMethod(snapshot.dealMethod);
+    setDealIndex(snapshot.dealIndex);
+    setAppViewedCount(snapshot.appViewedCount);
+    setRoleRevealed(snapshot.roleRevealed);
+    setManualRoleSelection(snapshot.manualRoleSelection);
     setDay(snapshot.day);
     setRound(snapshot.round);
     setRoundStarter(snapshot.roundStarter);
@@ -237,14 +295,65 @@ export default function Home() {
     setTieSeats(snapshot.tieSeats);
     setTieSpeechIndex(snapshot.tieSpeechIndex);
     setLiftDraft(snapshot.liftDraft);
-    setNightShotIndex(snapshot.nightShotIndex);
     setNightTarget(snapshot.nightTarget);
+    setNightShotChoice(snapshot.nightShotChoice);
     setNightRecords(snapshot.nightRecords);
     setEventLog(snapshot.eventLog);
     setRunning(false);
   };
 
   const undo = () => {
+    if (stage === "appDeal") {
+      if (roleRevealed) {
+        setRoleRevealed(false);
+        setToast("Роль снова скрыта");
+      } else if (dealIndex > 0) {
+        setDealIndex((current) => current - 1);
+        setToast(`Вернулись к передаче телефона игроку №${dealIndex}`);
+      } else if (appViewedCount > 0) {
+        setToast("Раздача уже началась · просмотренные роли нельзя перемешать незаметно");
+      } else {
+        setPlayers(initialPlayers);
+        setDealMethod(null);
+        setStage("dealChoice");
+      }
+      return;
+    }
+    if (stage === "manualDeal") {
+      if (manualRoleSelection) {
+        setManualRoleSelection(null);
+      } else if (dealIndex > 0) {
+        const previousIndex = dealIndex - 1;
+        const previousRole = players[previousIndex].role;
+        setPlayers((current) => current.map((player, index) => index === previousIndex ? { ...player, role: null } : player));
+        setDealIndex(previousIndex);
+        setManualRoleSelection(previousRole);
+      } else {
+        setPlayers(initialPlayers);
+        setDealMethod(null);
+        setStage("dealChoice");
+      }
+      return;
+    }
+    if (stage === "dealReady") {
+      if (dealMethod === "app") {
+        setStage("appDeal");
+        setDealIndex(9);
+        setRoleRevealed(false);
+      } else {
+        const previousRole = players[9].role;
+        setPlayers((current) => current.map((player, index) => index === 9 ? { ...player, role: null } : player));
+        setDealIndex(9);
+        setManualRoleSelection(previousRole);
+        setStage("manualDeal");
+      }
+      return;
+    }
+    if (stage === "nightShot" && nightShotChoice !== null) {
+      setNightShotChoice(null);
+      setToast("Выбор отстрела сброшен");
+      return;
+    }
     if ((stage === "vote" || stage === "revote") && voteState.draft.length) {
       const removed = voteState.draft[voteState.draft.length - 1];
       setVoteState((current) => ({ ...current, draft: current.draft.slice(0, -1) }));
@@ -262,6 +371,96 @@ export default function Home() {
     restoreSnapshot(previous.snapshot);
     setHistory((current) => current.slice(0, -1));
     setToast(`Отменено: ${previous.label}`);
+  };
+
+  const beginAppDeal = () => {
+    const roles = shuffleRoles();
+    setPlayers(initialPlayers.map((player, index) => ({ ...player, role: roles[index] })));
+    setDealMethod("app");
+    setDealIndex(0);
+    setAppViewedCount(0);
+    setRoleRevealed(false);
+    setManualRoleSelection(null);
+    setStage("appDeal");
+    setToast("Передайте телефон игроку №1");
+  };
+
+  const beginManualDeal = () => {
+    setPlayers(initialPlayers.map((player) => ({ ...player })));
+    setDealMethod("cards");
+    setDealIndex(0);
+    setAppViewedCount(0);
+    setRoleRevealed(false);
+    setManualRoleSelection(null);
+    setStage("manualDeal");
+    setToast("Введите роль игрока №1");
+  };
+
+  const advanceAppDeal = () => {
+    if (!roleRevealed) {
+      setRoleRevealed(true);
+      setAppViewedCount((current) => Math.max(current, dealIndex + 1));
+      return;
+    }
+    setRoleRevealed(false);
+    if (dealIndex < players.length - 1) {
+      setDealIndex((current) => current + 1);
+      setToast(`Роль скрыта · передайте телефон игроку №${dealIndex + 2}`);
+    } else {
+      setStage("dealReady");
+      setToast("Все 10 ролей розданы · верните телефон ведущему");
+    }
+  };
+
+  const confirmManualRole = () => {
+    if (!manualRoleSelection) return;
+    const assignedRole = manualRoleSelection;
+    setPlayers((current) => current.map((player, index) => index === dealIndex ? { ...player, role: assignedRole } : player));
+    setManualRoleSelection(null);
+    if (dealIndex < players.length - 1) {
+      setDealIndex((current) => current + 1);
+      setToast(`Роль игрока №${dealIndex + 1} записана · дальше №${dealIndex + 2}`);
+    } else {
+      setStage("dealReady");
+      setToast("Все роли внесены · состав готов");
+    }
+  };
+
+  const startGame = () => {
+    if (players.some((player) => player.role === null)) {
+      setToast("Сначала назначьте роли всем десяти игрокам");
+      return;
+    }
+    if (roleOptions.some((role) => assignedRoleCounts[role] !== roleLimits[role])) {
+      setToast("Проверьте состав: 6 мирных, 2 мафии, Дон и Шериф");
+      return;
+    }
+    setPlayers((current) => current.map((player) => ({
+      ...player,
+      fouls: 0,
+      nomination: null,
+      nominatedBy: null,
+      alive: true,
+    })));
+    setStage("speech");
+    setDay(1);
+    setRound(1);
+    setRoundStarter(1);
+    setCurrentSeat(1);
+    setSelectedSeat(1);
+    setSpokenSeats([]);
+    setSeconds(60);
+    setRunning(false);
+    setVoteState(emptyVoteState);
+    setTieSeats([]);
+    setTieSpeechIndex(0);
+    setLiftDraft([]);
+    setNightTarget(1);
+    setNightShotChoice(null);
+    setNightRecords([]);
+    setEventLog(["Круг 1 начался с игрока №1"]);
+    setHistory([]);
+    setToast("Роли готовы · речь начинает игрок №1");
   };
 
   const toggleTimer = () => {
@@ -297,12 +496,20 @@ export default function Home() {
 
   const toggleNomination = () => {
     if (!selectedPlayer.alive) return;
-    remember(`${selectedPlayer.nomination ? "снятие" : "выставление"} игрока №${selectedSeat}`);
+    if (selectedPlayer.nomination !== null) {
+      setToast(`Игрок №${selectedSeat} уже выставлен игроком №${selectedPlayer.nominatedBy}`);
+      return;
+    }
+    if (currentNomination) {
+      setToast(`Игрок №${currentSeat} уже выставил игрока №${currentNomination.seat}`);
+      return;
+    }
+    remember(`выставление игрока №${selectedSeat} игроком №${currentSeat}`);
     const nextOrder = nominees.length ? Math.max(...nominees.map((player) => player.nomination!)) + 1 : 1;
     setPlayers((current) => current.map((player) => player.seat === selectedSeat
-      ? { ...player, nomination: player.nomination ? null : nextOrder }
+      ? { ...player, nomination: nextOrder, nominatedBy: currentSeat }
       : player));
-    const message = selectedPlayer.nomination ? `Игрок №${selectedSeat} снят с голосования` : `Игрок №${selectedSeat} выставлен ${nextOrder}-м`;
+    const message = `Игрок №${currentSeat} выставил №${selectedSeat} · кандидат ${nextOrder}`;
     addLog(message);
     setToast(message);
   };
@@ -324,12 +531,13 @@ export default function Home() {
 
   const beginNight = (nightPlayers: Player[] = players) => {
     const activeBlack = nightPlayers.filter((player) => player.alive && (player.role === "Мафия" || player.role === "Дон"));
+    const activeDon = nightPlayers.find((player) => player.alive && player.role === "Дон");
     const activeSheriff = nightPlayers.find((player) => player.alive && player.role === "Шериф");
-    const nextNightStage: Stage = activeBlack.length ? "nightShot" : activeSheriff ? "nightSheriff" : "nightSummary";
-    const firstActor = activeBlack[0]?.seat ?? activeSheriff?.seat ?? 0;
+    const nextNightStage: Stage = activeBlack.length ? "nightShot" : activeDon ? "nightDon" : activeSheriff ? "nightSheriff" : "nightSummary";
+    const firstChecker = activeDon?.seat ?? activeSheriff?.seat ?? 0;
     setStage(nextNightStage);
-    setNightShotIndex(0);
-    setNightTarget(nightPlayers.find((player) => player.alive && player.seat !== firstActor)?.seat ?? firstActor);
+    setNightTarget(nightPlayers.find((player) => player.alive && player.seat !== firstChecker)?.seat ?? firstChecker);
+    setNightShotChoice(null);
     setNightRecords([]);
     setRunning(false);
   };
@@ -354,18 +562,8 @@ export default function Home() {
   };
 
   const advanceSpeech = () => {
-    remember(selectedSeat === currentSeat ? `речь игрока №${currentSeat}` : `передача речи игроку №${selectedSeat}`);
+    remember(`речь игрока №${currentSeat}`);
     setRunning(false);
-
-    if (selectedSeat !== currentSeat && selectedPlayer.alive) {
-      setSpokenSeats((current) => current.includes(currentSeat) ? current : [...current, currentSeat]);
-      setCurrentSeat(selectedSeat);
-      setSeconds(60);
-      const message = `Речь передана игроку №${selectedSeat}`;
-      addLog(message);
-      setToast(`${message} · таймер готов`);
-      return;
-    }
 
     const nextSpoken = spokenSeats.includes(currentSeat) ? spokenSeats : [...spokenSeats, currentSeat];
     const next = speechOrder.find((seat) => !nextSpoken.includes(seat));
@@ -512,44 +710,53 @@ export default function Home() {
   };
 
   const confirmNightStep = () => {
-    if (!nightActor || nightTarget === nightActor) {
-      setToast(nightTarget === nightActor ? "Нельзя выбрать самого себя" : "Ночной действующий игрок выбыл");
-      return;
-    }
-    remember(`ночное действие №${nightActor} → №${nightTarget}`);
     if (stage === "nightShot") {
-      const record: NightRecord = { type: "shot", actor: nightActor, target: nightTarget };
+      if (nightShotChoice === null) {
+        setToast("Выберите отстреленного игрока или промах");
+        return;
+      }
+      remember(nightShotChoice === "miss" ? "промах" : `отстрел игрока №${nightShotChoice}`);
+      const record: NightRecord = { type: "shot", target: nightShotChoice === "miss" ? null : nightShotChoice };
       setNightRecords((current) => [...current, record]);
-      addLog(`Отстрел: №${nightActor} → №${nightTarget}`);
-      if (nightShotIndex < mafiaActors.length - 1) {
-        setNightShotIndex((current) => current + 1);
-        setToast(`Отстрел записан · следующий стрелок №${mafiaActors[nightShotIndex + 1].seat}`);
-      } else if (don) {
+      addLog(nightShotChoice === "miss" ? "Ночь: промах" : `Ночь: отстрелен игрок №${nightShotChoice}`);
+      if (don) {
         setStage("nightDon");
         setNightTarget(players.find((player) => player.alive && player.seat !== don.seat)?.seat ?? 1);
-        setToast("Отстрелы закончены · проверка Дона");
+        setToast("Отстрел записан · проверка Дона");
       } else if (sheriff) {
         setStage("nightSheriff");
         setNightTarget(players.find((player) => player.alive && player.seat !== sheriff.seat)?.seat ?? 1);
-        setToast("Отстрелы закончены · проверка Шерифа");
+        setToast("Отстрел записан · проверка Шерифа");
       } else {
         setStage("nightSummary");
       }
     } else if (stage === "nightDon") {
-      setNightRecords((current) => [...current, { type: "don", actor: nightActor, target: nightTarget }]);
-      addLog(`Дон №${nightActor} → №${nightTarget}`);
+      if (!checkActor || nightTarget === checkActor) {
+        setToast(nightTarget === checkActor ? "Дон не может проверить себя" : "Дон выбыл");
+        return;
+      }
+      const result: "Шериф" | "Не шериф" = targetRole === "Шериф" ? "Шериф" : "Не шериф";
+      remember(`проверка Дона: №${nightTarget} · ${result}`);
+      setNightRecords((current) => [...current, { type: "don", target: nightTarget, result }]);
+      addLog(`Проверка Дона: №${nightTarget} · ${result}`);
       if (sheriff) {
         setStage("nightSheriff");
         setNightTarget(players.find((player) => player.alive && player.seat !== sheriff.seat)?.seat ?? 1);
-        setToast("Проверка Дона записана · теперь Шериф");
+        setToast(`${result} · теперь проверка Шерифа`);
       } else {
         setStage("nightSummary");
       }
-    } else {
-      setNightRecords((current) => [...current, { type: "sheriff", actor: nightActor, target: nightTarget }]);
-      addLog(`Шериф №${nightActor} → №${nightTarget}`);
+    } else if (stage === "nightSheriff") {
+      if (!checkActor || nightTarget === checkActor) {
+        setToast(nightTarget === checkActor ? "Шериф не может проверить себя" : "Шериф выбыл");
+        return;
+      }
+      const result: "Мафия" | "Мирный" = targetRole === "Мафия" || targetRole === "Дон" ? "Мафия" : "Мирный";
+      remember(`проверка Шерифа: №${nightTarget} · ${result}`);
+      setNightRecords((current) => [...current, { type: "sheriff", target: nightTarget, result }]);
+      addLog(`Проверка Шерифа: №${nightTarget} · ${result}`);
       setStage("nightSummary");
-      setToast("Проверка Шерифа записана · итоги ночи");
+      setToast(`${result} · итоги ночи`);
     }
   };
 
@@ -557,7 +764,7 @@ export default function Home() {
     remember(`начало круга ${round + 1}`);
     const nextPlayers = players.map((player) => shotResult === player.seat ? { ...player, alive: false } : player);
     const nextStarter = nextAliveAfter(roundStarter, nextPlayers);
-    setPlayers(nextPlayers.map((player) => ({ ...player, nomination: null })));
+    setPlayers(nextPlayers.map((player) => ({ ...player, nomination: null, nominatedBy: null })));
     setDay((current) => current + 1);
     setRound((current) => current + 1);
     setRoundStarter(nextStarter);
@@ -569,6 +776,7 @@ export default function Home() {
     setVoteState(emptyVoteState);
     setTieSeats([]);
     setLiftDraft([]);
+    setNightShotChoice(null);
     setNightRecords([]);
     setStage("speech");
     const message = `Круг ${round + 1} начинается с игрока №${nextStarter}`;
@@ -587,11 +795,155 @@ export default function Home() {
       const player = players.find((candidate) => candidate.seat === seat);
       if (!player?.alive) {
         setToast(`Игрок №${seat} выбыл и не может быть целью`);
+      } else if (stage !== "nightShot" && seat === checkActor) {
+        setToast(stage === "nightDon" ? "Дон не может проверить себя" : "Шериф не может проверить себя");
+      } else if (stage === "nightShot") {
+        setNightShotChoice(seat);
       } else {
         setNightTarget(seat);
       }
     }
   };
+
+  const isDealStage = stage === "dealChoice" || stage === "appDeal" || stage === "manualDeal" || stage === "dealReady";
+  const undoAvailable = isDealStage
+    ? stage !== "dealChoice"
+    : history.length > 0
+      || ((stage === "vote" || stage === "revote") && voteState.draft.length > 0)
+      || (stage === "lift" && liftDraft.length > 0)
+      || (stage === "nightShot" && nightShotChoice !== null);
+
+  if (isDealStage) {
+    const dealPlayer = players[dealIndex] ?? players[0];
+    const dealRole = dealPlayer.role;
+    const setupLabel = stage === "dealChoice"
+      ? "Подготовка партии"
+      : stage === "dealReady"
+        ? "Роли готовы"
+        : `Игрок ${dealIndex + 1} из 10`;
+    const setupNote = stage === "appDeal" ? "Приватный просмотр" : stage === "manualDeal" ? "Ввод с колоды" : "Стандартная десятка";
+
+    return (
+      <main className="app-shell">
+        <section className={`game-app deal-app stage-${stage}`} aria-label="Раздача ролей Mafia Master">
+          <header className="game-header">
+            <div className="header-main">
+              <button className="undo-button" onClick={undo} disabled={!undoAvailable} aria-label="Вернуться назад">
+                <span>↶</span>Назад
+              </button>
+              <div className="game-heading"><span>MAFIA MASTER · НОВАЯ ИГРА</span><strong>Раздача ролей</strong></div>
+              <div className="app-brand">M</div>
+            </div>
+            <div className="stage-status deal-status" aria-live="polite">
+              <span className="stage-dot" />
+              <div><small>Сейчас</small><strong>{setupLabel}</strong></div>
+              <span>{setupNote}</span>
+            </div>
+          </header>
+
+          {stage === "dealChoice" && (
+            <section className="deal-panel deal-choice">
+              <div className="deal-intro">
+                <span className="deal-eyebrow">Перед началом игры</span>
+                <h1>Как раздать роли?</h1>
+                <p>Выберите один способ. После раздачи приложение само поведёт ведущего по всей партии.</p>
+              </div>
+              <div className="role-composition" aria-label="Состав ролей">
+                <span><b>6</b> мирных</span><span><b>2</b> мафии</span><span><b>1</b> Дон</span><span><b>1</b> Шериф</span>
+              </div>
+              <div className="deal-methods">
+                <button onClick={beginAppDeal}>
+                  <span className="method-icon">▣</span>
+                  <span><small>Без колоды</small><strong>Через приложение</strong><em>Роли перемешаются, игроки посмотрят их по очереди</em></span>
+                  <b>→</b>
+                </button>
+                <button onClick={beginManualDeal}>
+                  <span className="method-icon cards">♠</span>
+                  <span><small>Свои карты</small><strong>При помощи колоды</strong><em>Ведущий раздаст карты и внесёт каждую роль</em></span>
+                  <b>→</b>
+                </button>
+              </div>
+              <div className="deal-footnote"><i>●</i> Роли хранятся только до конца текущей партии</div>
+            </section>
+          )}
+
+          {stage === "appDeal" && (
+            <section className="deal-panel app-deal">
+              <div className="deal-progress"><span style={{ width: `${((dealIndex + (roleRevealed ? 1 : 0)) / 10) * 100}%` }} /></div>
+              <div className="handoff-copy">
+                <span>{roleRevealed ? "Только для вас" : "Передайте телефон"}</span>
+                <h2>Игрок №{dealPlayer.seat}</h2>
+                <p>{roleRevealed ? "Запомните роль и никому её не показывайте" : "Остальные игроки закрывают глаза и не смотрят на экран"}</p>
+              </div>
+              <div className={`private-role-card ${roleRevealed && dealRole ? `is-revealed role-${roleClassNames[dealRole]}` : ""}`}>
+                <div className="card-corner">M</div>
+                {roleRevealed && dealRole ? (
+                  <div className="revealed-role"><span>Ваша роль</span><strong>{dealRole}</strong><p>{roleDescriptions[dealRole]}</p></div>
+                ) : (
+                  <div className="hidden-role"><span>?</span><strong>Роль скрыта</strong><p>Нажмите кнопку, когда экран видит только игрок №{dealPlayer.seat}</p></div>
+                )}
+                <div className="card-corner bottom">M</div>
+              </div>
+              <button className="primary-action deal-primary" onClick={advanceAppDeal}>
+                <span><small>{roleRevealed ? "После нажатия роль сразу исчезнет" : "Убедитесь, что никто не подсматривает"}</small>{roleRevealed ? dealIndex < 9 ? `Запомнил · передать №${dealIndex + 2}` : "Запомнил · скрыть роль" : "Показать мою роль"}</span>
+                <strong>{roleRevealed ? "→" : "⌁"}</strong>
+              </button>
+            </section>
+          )}
+
+          {stage === "manualDeal" && (
+            <section className="deal-panel manual-deal">
+              <div className="deal-progress"><span style={{ width: `${(dealIndex / 10) * 100}%` }} /></div>
+              <div className="handoff-copy">
+                <span>Карта из колоды</span>
+                <h2>Игрок №{dealPlayer.seat}</h2>
+                <p>Какую роль получил игрок? Приложение проследит за правильным составом.</p>
+              </div>
+              <div className="role-grid">
+                {roleOptions.map((role) => {
+                  const remaining = roleLimits[role] - assignedRoleCounts[role];
+                  const isSelected = manualRoleSelection === role;
+                  return (
+                    <button
+                      key={role}
+                      className={`role-option role-${roleClassNames[role]} ${isSelected ? "is-selected" : ""}`}
+                      onClick={() => setManualRoleSelection(role)}
+                      disabled={remaining <= 0 && !isSelected}
+                    >
+                      <span>{role === "Мирный" ? "○" : role === "Мафия" ? "●" : role === "Дон" ? "♛" : "✦"}</span>
+                      <strong>{role}</strong>
+                      <small>{remaining > 0 ? `осталось ${remaining}` : "все назначены"}</small>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="manual-balance">{roleOptions.map((role) => <span key={role} className={assignedRoleCounts[role] === roleLimits[role] ? "is-full" : ""}><b>{assignedRoleCounts[role]}</b>/{roleLimits[role]} {role}</span>)}</div>
+              <button className="primary-action deal-primary" onClick={confirmManualRole} disabled={!manualRoleSelection}>
+                <span><small>{manualRoleSelection ? `Игрок №${dealPlayer.seat} · ${manualRoleSelection}` : "Сначала выберите роль"}</small>{manualRoleSelection ? dealIndex < 9 ? `Записать · дальше №${dealIndex + 2}` : "Записать последнюю роль" : "Выберите роль игрока"}</span>
+                <strong>→</strong>
+              </button>
+            </section>
+          )}
+
+          {stage === "dealReady" && (
+            <section className="deal-panel deal-ready">
+              <div className="ready-seal"><span>✓</span></div>
+              <span className="deal-eyebrow">Раздача завершена</span>
+              <h1>Все роли готовы</h1>
+              <p>{dealMethod === "app" ? "Все десять игроков посмотрели свои роли. Верните телефон ведущему." : "Ведущий внёс все карты. Состав проверен и готов к игре."}</p>
+              <div className="ready-composition"><div><strong>6</strong><span>мирных</span></div><div><strong>2</strong><span>мафии</span></div><div><strong>1</strong><span>Дон</span></div><div><strong>1</strong><span>Шериф</span></div></div>
+              <div className="first-speaker"><span>Первую речь начинает</span><strong>Игрок №1</strong><small>дальше — только по часовой стрелке</small></div>
+              <button className="primary-action deal-primary" onClick={startGame}>
+                <span><small>Раздача закроется и роли останутся у ведущего</small>Начать игру · речь №1</span><strong>→</strong>
+              </button>
+            </section>
+          )}
+
+          {toast && <div className="toast" role="status"><span>{toast}</span><button onClick={() => setToast(null)} aria-label="Закрыть сообщение">×</button></div>}
+        </section>
+      </main>
+    );
+  }
 
   let stageLabel = "";
   let stageNote = "";
@@ -611,26 +963,23 @@ export default function Home() {
     stageLabel = "Подъём обоих";
     stageNote = `${liftDraft.length} за · нужно ${Math.floor(alivePlayers.length / 2) + 1}`;
   } else if (stage === "nightShot") {
-    stageLabel = `Ночь · отстрел ${nightShotIndex + 1} из ${mafiaActors.length}`;
-    stageNote = `Стреляет №${nightActor}`;
+    stageLabel = "Ночь · отстрел";
+    stageNote = nightShotChoice === "miss" ? "Выбран промах" : typeof nightShotChoice === "number" ? `Выбывает №${nightShotChoice}` : "Выберите исход";
   } else if (stage === "nightDon") {
     stageLabel = "Ночь · проверка Дона";
-    stageNote = `Проверяет №${nightActor}`;
+    stageNote = currentCheckResult.toUpperCase();
   } else if (stage === "nightSheriff") {
     stageLabel = "Ночь · проверка Шерифа";
-    stageNote = `Проверяет №${nightActor}`;
+    stageNote = currentCheckResult.toUpperCase();
   } else {
     stageLabel = "Итоги ночи";
-    stageNote = shotResult ? `Выбывает №${shotResult}` : "Промах";
+    stageNote = shotResult ? `Выбывает №${shotResult}` : shotRecord ? "Промах" : "Без отстрела";
   }
 
-  const undoAvailable = history.length > 0 || ((stage === "vote" || stage === "revote") && voteState.draft.length > 0) || (stage === "lift" && liftDraft.length > 0);
   const primaryLabel = stage === "speech"
-    ? selectedSeat !== currentSeat
-      ? `Передать речь игроку №${selectedSeat}`
-      : isLastSpeech
-        ? nominees.length ? `К голосованию · ${nominees.length}` : "К ночи"
-        : `Следующий: игрок №${nextSpeechSeat}`
+    ? isLastSpeech
+      ? nominees.length ? `К голосованию · ${nominees.length}` : "К ночи"
+      : `Следующий: игрок №${nextSpeechSeat}`
     : stage === "vote" || stage === "revote"
       ? voteState.index < voteState.candidates.length - 1
         ? `Зафиксировать · дальше №${voteState.candidates[voteState.index + 1]}`
@@ -641,11 +990,11 @@ export default function Home() {
           ? "Зафиксировать решение"
           : stage === "nightSummary"
             ? `Начать круг ${round + 1}`
-            : stage === "nightShot" && nightShotIndex < mafiaActors.length - 1
-              ? `Следующий стрелок: №${mafiaActors[nightShotIndex + 1]?.seat}`
-              : stage === "nightShot"
-                ? don ? "К проверке Дона" : sheriff ? "К проверке Шерифа" : "К итогам ночи"
-                : stage === "nightDon" && sheriff ? "К проверке Шерифа" : "К итогам ночи";
+            : stage === "nightShot"
+              ? nightShotChoice === "miss" ? "Зафиксировать промах" : typeof nightShotChoice === "number" ? `Подтвердить отстрел №${nightShotChoice}` : "Выберите игрока или промах"
+              : stage === "nightDon"
+                ? sheriff ? `Записать · ${currentCheckResult.toUpperCase()} · к Шерифу` : `Записать · ${currentCheckResult.toUpperCase()}`
+                : `Записать · ${currentCheckResult.toUpperCase()} · к итогам`;
 
   const onPrimary = stage === "speech"
     ? advanceSpeech
@@ -660,6 +1009,7 @@ export default function Home() {
             : stage === "nightSummary"
               ? beginNextRound
               : confirmNightStep;
+  const primaryDisabled = stage === "nightShot" && nightShotChoice === null;
 
   const timedLabel = stage === "speech" ? `Говорит игрок №${currentSeat}` : `Попил · игрок №${currentSeat}`;
   const timerStatus = seconds === 0 ? "Время вышло" : running ? "таймер идёт" : "готов к старту";
@@ -713,9 +1063,11 @@ export default function Home() {
             ) : stage === "lift" ? (
               <div className="workflow-center"><span>Поднять {tieSeats.map((seat) => `№${seat}`).join(" и ")}?</span><strong>{liftDraft.length}</strong><small>за · нужно {Math.floor(alivePlayers.length / 2) + 1}</small></div>
             ) : stage === "nightSummary" ? (
-              <div className="workflow-center night-result"><span>Итог ночи</span><strong>{shotResult ? `№${shotResult}` : "Промах"}</strong><small>{shotResult ? "покидает стол утром" : "единая цель не выбрана"}</small></div>
+              <div className="workflow-center night-result"><span>Итог ночи</span><strong>{shotResult ? `№${shotResult}` : shotRecord ? "Промах" : "Без отстрела"}</strong><small>{shotResult ? "покидает стол утром" : "никто не выбывает"}</small></div>
+            ) : stage === "nightShot" ? (
+              <div className="workflow-center night-shot-choice"><span>Результат отстрела</span><strong>{nightShotChoice === "miss" ? "ПРОМАХ" : typeof nightShotChoice === "number" ? `№${nightShotChoice}` : "—"}</strong><small>выберите игрока на столе или промах</small></div>
             ) : (
-              <div className="workflow-center night-target"><span>{stage === "nightShot" ? "Отстрел" : "Проверка"}</span><strong>№{nightActor} → №{nightTarget}</strong><small>тапните цель на столе</small></div>
+              <div className={`workflow-center check-result ${currentCheckResult === "Мафия" ? "is-mafia" : currentCheckResult === "Шериф" ? "is-sheriff" : "is-clear"}`}><span>{stage === "nightDon" ? "Дон проверяет Шерифа" : "Шериф проверяет мафию"} · №{nightTarget}</span><strong>{currentCheckResult.toUpperCase()}</strong><small>тапните другого игрока, чтобы изменить цель</small></div>
             )}
           </div>
 
@@ -724,14 +1076,14 @@ export default function Home() {
               const lockedCandidate = (stage === "vote" || stage === "revote") ? assignmentFor(player.seat, voteState.confirmed) : null;
               const draftVote = (stage === "vote" || stage === "revote") && voteState.draft.includes(player.seat);
               const liftVote = stage === "lift" && liftDraft.includes(player.seat);
-              const isTarget = (stage === "nightShot" || stage === "nightDon" || stage === "nightSheriff") && nightTarget === player.seat;
+              const isTarget = stage === "nightShot" ? nightShotChoice === player.seat : (stage === "nightDon" || stage === "nightSheriff") && nightTarget === player.seat;
               const isCandidate = (stage === "vote" || stage === "revote") && currentCandidate === player.seat;
               const isSelected = stage === "speech" && selectedSeat === player.seat;
-              const marker = lockedCandidate !== null ? `→${lockedCandidate}` : draftVote ? "✓" : liftVote ? "ЗА" : isTarget ? "ЦЕЛЬ" : null;
+              const marker = lockedCandidate !== null ? `→${lockedCandidate}` : draftVote ? "✓" : liftVote ? "ЗА" : isTarget ? stage === "nightShot" ? "ОТСТРЕЛ" : "ПРОВЕРКА" : null;
               return (
                 <button
                   key={player.seat}
-                  className={`table-seat seat-${player.seat} ${isSelected ? "is-selected" : ""} ${stage === "speech" && currentSeat === player.seat ? "is-current" : ""} ${player.nomination ? "is-nominated" : ""} ${isCandidate ? "is-candidate" : ""} ${draftVote || liftVote ? "is-draft-vote" : ""} ${lockedCandidate !== null ? "has-voted" : ""} ${!player.alive ? "is-eliminated" : ""}`}
+                  className={`table-seat seat-${player.seat} ${isSelected ? "is-selected" : ""} ${stage === "speech" && currentSeat === player.seat ? "is-current" : ""} ${player.nomination ? "is-nominated" : ""} ${isCandidate ? "is-candidate" : ""} ${draftVote || liftVote ? "is-draft-vote" : ""} ${isTarget ? "is-night-target" : ""} ${lockedCandidate !== null ? "has-voted" : ""} ${!player.alive ? "is-eliminated" : ""}`}
                   disabled={!player.alive && stage === "speech"}
                   aria-disabled={lockedCandidate !== null || !player.alive}
                   onClick={() => handleSeatClick(player.seat)}
@@ -755,7 +1107,7 @@ export default function Home() {
             <div><span>Кандидаты</span><strong>{nominees.length} по порядку</strong></div>
             <ol>{nominees.map((player, index) => {
               const confirmedCount = voteState.confirmed[player.seat]?.length;
-              return <li key={player.seat} className={currentCandidate === player.seat ? "is-current" : confirmedCount !== undefined ? "is-done" : ""}><span>{index + 1}</span><strong>№{player.seat}</strong>{confirmedCount !== undefined && <small>{confirmedCount}</small>}</li>;
+              return <li key={player.seat} className={currentCandidate === player.seat ? "is-current" : confirmedCount !== undefined ? "is-done" : ""}><span>{index + 1}</span><strong>№{player.seat}</strong><small>{confirmedCount !== undefined ? `${confirmedCount} гол.` : `от №${player.nominatedBy}`}</small></li>;
             })}</ol>
           </section>
         )}
@@ -765,12 +1117,12 @@ export default function Home() {
             <>
               <div className="selected-player">
                 <div className="selected-number">{selectedPlayer.seat}</div>
-                <div className="selected-copy"><span>{selectedSeat === currentSeat ? "Сейчас говорит" : "Выбран игрок"}</span><strong>{selectedPlayer.name}</strong></div>
+                <div className="selected-copy"><span>{selectedSeat === currentSeat ? "Сейчас говорит" : "Действия с игроком"}</span><strong>{selectedPlayer.name}</strong></div>
                 <div className="selected-fouls"><span>{selectedPlayer.fouls} / 4 фола</span><FoulMarks count={selectedPlayer.fouls} /></div>
               </div>
               <div className="quick-actions">
                 <button onClick={addFoul} disabled={!selectedPlayer.alive}><span>+</span><strong>Фол №{selectedSeat}</strong></button>
-                <button onClick={toggleNomination} disabled={!selectedPlayer.alive}><span>{selectedPlayer.nomination ? "×" : "↓"}</span><strong>{selectedPlayer.nomination ? "Снять" : "Выставить"} №{selectedSeat}</strong></button>
+                <button onClick={toggleNomination} disabled={!selectedPlayer.alive}><span>{selectedPlayer.nomination ? "✓" : currentNomination ? "1" : "↓"}</span><strong>{selectedPlayer.nomination ? "Уже в списке" : currentNomination ? `№${currentSeat} → №${currentNomination.seat}` : `Выставить №${selectedSeat}`}</strong></button>
                 <button onClick={buyTime} disabled={!currentPlayer.alive}><span>+30</span><strong>№{currentSeat} · 2 фола</strong></button>
               </div>
             </>
@@ -786,10 +1138,11 @@ export default function Home() {
 
           {stage === "tieSpeech" && <div className="simple-instruction"><span>Попил</span><strong>Игрок №{currentSeat} получает 30 секунд</strong><small>Следующий этап приложение выберет автоматически</small></div>}
           {stage === "lift" && <div className="simple-instruction"><span>Финальное голосование</span><strong>Кто за подъём {tieSeats.map((seat) => `№${seat}`).join(" и ")}?</strong><small>Тапните номера голосующих «за». Остальные считаются «против».</small></div>}
-          {(stage === "nightShot" || stage === "nightDon" || stage === "nightSheriff") && <div className="night-instruction"><span>{stage === "nightShot" ? "Кто стреляет → кого" : "Кто проверяет → кого"}</span><div><strong>№{nightActor}</strong><i>→</i><strong className="target">№{nightTarget}</strong></div><small>После записи приложение само откроет следующее ночное действие.</small></div>}
-          {stage === "nightSummary" && <div className="night-summary"><span>Ночь записана</span>{nightRecords.map((record, index) => <div key={`${record.type}-${record.actor}-${index}`}><strong>{record.type === "shot" ? "Отстрел" : record.type === "don" ? "Дон" : "Шериф"}</strong><span>№{record.actor} → №{record.target}</span></div>)}<div className="night-outcome"><strong>Результат</strong><span>{shotResult ? `утром выбывает №${shotResult}` : "промах"}</span></div></div>}
+          {stage === "nightShot" && <div className="shot-control"><div><span>Отстрел</span><strong>{typeof nightShotChoice === "number" ? `Выбран игрок №${nightShotChoice}` : nightShotChoice === "miss" ? "Выбран промах" : "Коснитесь игрока на столе"}</strong><small>Номер стрелявшего не нужен — фиксируется только результат.</small></div><button className={nightShotChoice === "miss" ? "is-selected" : ""} onClick={() => setNightShotChoice("miss")}><span>×</span><strong>Промах</strong></button></div>}
+          {(stage === "nightDon" || stage === "nightSheriff") && <div className={`check-instruction ${currentCheckResult === "Мафия" ? "is-mafia" : currentCheckResult === "Шериф" ? "is-sheriff" : "is-clear"}`}><span>{stage === "nightDon" ? "Проверка Дона" : "Проверка Шерифа"}</span><div><small>Игрок №{nightTarget}</small><strong>{currentCheckResult.toUpperCase()}</strong></div><p>{stage === "nightDon" ? "Приложение показывает: Шериф или не Шериф" : "Приложение показывает: Мафия или Мирный"}</p></div>}
+          {stage === "nightSummary" && <div className="night-summary"><span>Ночь записана</span>{nightRecords.map((record, index) => <div key={`${record.type}-${record.target ?? "miss"}-${index}`}><strong>{record.type === "shot" ? "Отстрел" : record.type === "don" ? "Проверка Дона" : "Проверка Шерифа"}</strong><span>{record.type === "shot" ? record.target ? `игрок №${record.target}` : "промах" : `№${record.target} · ${record.result.toUpperCase()}`}</span></div>)}<div className="night-outcome"><strong>Утром</strong><span>{shotResult ? `выбывает №${shotResult}` : "никто не выбывает"}</span></div></div>}
 
-          <button className="primary-action" onClick={onPrimary}>
+          <button className="primary-action" onClick={onPrimary} disabled={primaryDisabled}>
             <span><small>{stage === "speech" ? "Речи идут по часовой стрелке" : stage === "vote" || stage === "revote" ? `${voteState.draft.length} ${voteWord(voteState.draft.length)} будет зафиксировано` : "Следующий этап откроется автоматически"}</small>{primaryLabel}</span>
             <strong>→</strong>
           </button>
