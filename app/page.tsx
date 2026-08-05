@@ -90,6 +90,7 @@ type GameSnapshot = {
   tieSeats: number[];
   tieSpeechIndex: number;
   liftDraft: number[];
+  voteSkips: number;
   nightTarget: number;
   nightShotChoice: number | "miss" | null;
   nightRecords: NightRecord[];
@@ -275,6 +276,7 @@ export default function Home() {
   const [tieSeats, setTieSeats] = useState<number[]>([]);
   const [tieSpeechIndex, setTieSpeechIndex] = useState(0);
   const [liftDraft, setLiftDraft] = useState<number[]>([]);
+  const [voteSkips, setVoteSkips] = useState(0);
   const [nightTarget, setNightTarget] = useState(6);
   const [nightShotChoice, setNightShotChoice] = useState<number | "miss" | null>(null);
   const [nightRecords, setNightRecords] = useState<NightRecord[]>([]);
@@ -282,6 +284,7 @@ export default function Home() {
   const [nominationRecords, setNominationRecords] = useState<NominationRecord[]>([]);
   const [eventLog, setEventLog] = useState<string[]>(["Выберите способ раздачи ролей"]);
   const [history, setHistory] = useState<UndoEntry[]>([]);
+  const [penaltyPanelOpen, setPenaltyPanelOpen] = useState(false);
   const [, setToast] = useState<string | null>(null);
   const deadlineRef = useRef(0);
   const manualAssignLockRef = useRef(false);
@@ -325,6 +328,8 @@ export default function Home() {
   const isLastSpeech = nextSpeechSeat === null;
   const currentCandidate = voteState.candidates[voteState.index] ?? null;
   const lockedVoters = Object.values(voteState.confirmed).flat();
+  const isVotingSequence = stage === "vote" || stage === "tieSpeech" || stage === "revote" || stage === "lift";
+  const penaltyAvailable = stage === "speech" || isVotingSequence || stage.startsWith("night");
   const isNightCheckStage = stage === "nightDon" || stage === "nightSheriff";
   const isTimedStage = stage === "agreement" || stage === "freeSeating" || stage === "speech" || stage === "tieSpeech" || stage === "farewellSpeech" || isNightCheckStage;
   const timerLimit = timerBaseSeconds;
@@ -368,6 +373,7 @@ export default function Home() {
     tieSeats,
     tieSpeechIndex,
     liftDraft,
+    voteSkips,
     nightTarget,
     nightShotChoice,
     nightRecords,
@@ -427,6 +433,7 @@ export default function Home() {
     setRunning(false);
     setStage("gameOver");
     setRolesVisible(true);
+    setPenaltyPanelOpen(false);
     addLog(`Игра завершена · победа ${winnerLabel}`);
     setToast(`Победа ${winnerLabel}`);
     return true;
@@ -453,6 +460,7 @@ export default function Home() {
     setTieSeats(snapshot.tieSeats);
     setTieSpeechIndex(snapshot.tieSpeechIndex);
     setLiftDraft(snapshot.liftDraft);
+    setVoteSkips(snapshot.voteSkips);
     setNightTarget(snapshot.nightTarget);
     setNightShotChoice(snapshot.nightShotChoice);
     setNightRecords(snapshot.nightRecords);
@@ -592,6 +600,7 @@ export default function Home() {
     setTieSeats([]);
     setTieSpeechIndex(0);
     setLiftDraft([]);
+    setVoteSkips(0);
     setNightTarget(1);
     setNightShotChoice(null);
     setNightRecords([]);
@@ -599,6 +608,7 @@ export default function Home() {
     setNominationRecords([]);
     setEventLog(["Выберите способ раздачи ролей"]);
     setHistory([]);
+    setPenaltyPanelOpen(false);
     setToast(null);
   };
 
@@ -686,6 +696,7 @@ export default function Home() {
     setTieSeats([]);
     setTieSpeechIndex(0);
     setLiftDraft([]);
+    setVoteSkips(0);
     setNightTarget(1);
     setNightShotChoice(null);
     setNightRecords([]);
@@ -694,6 +705,7 @@ export default function Home() {
     setRolesVisible(false);
     setEventLog(["Первая ночь · договорка 60 секунд"]);
     setHistory([]);
+    setPenaltyPanelOpen(false);
     startCountdown(60);
     setToast("Просыпается мафия · договорка началась");
   };
@@ -767,11 +779,11 @@ export default function Home() {
         : `Игроку №${selectedSeat} добавлен ${nextFouls}-й фол`;
     addLog(message);
     setToast(message);
-    if (nextFouls === 4) finishGameIfNeeded(nextPlayers);
+    if (nextFouls === 4) handlePenaltyRemoval(nextPlayers, selectedSeat);
   };
 
   const removeFoul = () => {
-    if (selectedPlayer.fouls <= 0) return;
+    if (!selectedPlayer.alive || selectedPlayer.fouls <= 0) return;
     remember(`снятие фола у игрока №${selectedSeat}`);
     const nextFouls = selectedPlayer.fouls - 1;
     setPlayers((current) => current.map((player) => {
@@ -809,7 +821,7 @@ export default function Home() {
       : `Игроку №${selectedSeat} показана жёлтая карточка`;
     addLog(message);
     setToast(message);
-    if (nextCards === 2) finishGameIfNeeded(nextPlayers);
+    if (nextCards === 2) handlePenaltyRemoval(nextPlayers, selectedSeat);
   };
 
   const toggleNomination = () => {
@@ -861,7 +873,7 @@ export default function Home() {
     const message = `Игрок №${currentSeat}: +30 секунд и +2 фола`;
     addLog(message);
     setToast(message);
-    if (nextFouls === 4) finishGameIfNeeded(nextPlayers);
+    if (nextFouls === 4) handlePenaltyRemoval(nextPlayers, currentSeat);
   };
 
   const beginNight = (nightPlayers: Player[] = players) => {
@@ -878,6 +890,50 @@ export default function Home() {
       startCountdown(15);
     } else {
       setRunning(false);
+    }
+  };
+
+  const handlePenaltyRemoval = (roster: Player[], removedSeat: number) => {
+    setPenaltyPanelOpen(false);
+    if (finishGameIfNeeded(roster)) return;
+
+    if (isVotingSequence) {
+      setVoteState(emptyVoteState);
+      setTieSeats([]);
+      setTieSpeechIndex(0);
+      setLiftDraft([]);
+      beginNight(roster);
+      addLog(`Удаление №${removedSeat} заменило голосование · начинается ночь`);
+      setToast(`Игрок №${removedSeat} удалён · голосование отменено`);
+      return;
+    }
+
+    setVoteSkips((current) => current + 1);
+    addLog(`Удаление №${removedSeat} · одно голосование будет пропущено`);
+
+    if (stage === "nightDon" && roster.find((player) => player.alive && player.role === "Дон") === undefined) {
+      const activeSheriff = roster.find((player) => player.alive && player.role === "Шериф");
+      if (activeSheriff) {
+        setStage("nightSheriff");
+        setNightTarget(roster.find((player) => player.alive && player.seat !== activeSheriff.seat)?.seat ?? activeSheriff.seat);
+        startCountdown(15);
+      } else {
+        setStage("nightSummary");
+        setRunning(false);
+      }
+      return;
+    }
+
+    if (stage === "nightSheriff" && roster.find((player) => player.alive && player.role === "Шериф") === undefined) {
+      setStage("nightSummary");
+      setRunning(false);
+      return;
+    }
+
+    if (stage === "nightShot" && nightShotChoice === removedSeat) setNightShotChoice(null);
+    if ((stage === "nightDon" || stage === "nightSheriff") && nightTarget === removedSeat) {
+      const activeActor = roster.find((player) => player.alive && player.role === (stage === "nightDon" ? "Дон" : "Шериф"));
+      setNightTarget(roster.find((player) => player.alive && player.seat !== activeActor?.seat)?.seat ?? activeActor?.seat ?? 1);
     }
   };
 
@@ -940,6 +996,18 @@ export default function Home() {
   };
 
   const beginVoting = () => {
+    if (voteSkips > 0) {
+      const remainingSkips = voteSkips - 1;
+      setVoteSkips(remainingSkips);
+      setVoteState(emptyVoteState);
+      setTieSeats([]);
+      setTieSpeechIndex(0);
+      setLiftDraft([]);
+      beginNight();
+      addLog(`Голосование пропущено: удаление вместо съёма${remainingSkips > 0 ? ` · осталось ${remainingSkips}` : ""}`);
+      setToast(remainingSkips > 0 ? `Голосование пропущено · ещё без голосования: ${remainingSkips}` : "Голосование пропущено · начинается ночь");
+      return;
+    }
     const candidateSeats = nominees.map((player) => player.seat);
     if (!candidateSeats.length) {
       beginNight();
@@ -1398,7 +1466,9 @@ export default function Home() {
     stageNote = winner === "red" ? "Победа красных" : "Победа чёрных";
   } else if (stage === "speech") {
     stageLabel = `Речь ${Math.min(spokenSeats.length + 1, speechOrder.length)} из ${speechOrder.length}`;
-    stageNote = timerBaseSeconds === 30 ? "3 фола · 30 секунд" : `Круг начал №${roundStarter}`;
+    stageNote = voteSkips > 0
+      ? `Без голосования: ${voteSkips}`
+      : timerBaseSeconds === 30 ? "3 фола · 30 секунд" : `Круг начал №${roundStarter}`;
   } else if (stage === "farewellSpeech") {
     stageLabel = farewellState?.reason === "shot" ? "Речь убитого игрока" : "Речь заголосованного";
     stageNote = farewellState ? `${farewellState.index + 1} из ${farewellState.seats.length} · 60 секунд` : "60 секунд";
@@ -1432,7 +1502,7 @@ export default function Home() {
     ? "Новая игра"
     : stage === "speech"
     ? isLastSpeech
-      ? nominees.length ? `К голосованию · ${nominees.length}` : "К ночи"
+      ? voteSkips > 0 ? "К ночи · без голосования" : nominees.length ? `К голосованию · ${nominees.length}` : "К ночи"
       : `Следующий: игрок №${nextSpeechSeat}`
     : stage === "vote" || stage === "revote"
       ? voteState.index < voteState.candidates.length - 1
@@ -1498,16 +1568,32 @@ export default function Home() {
               <span>MAFIA MASTER · ИГРА 024</span>
               <strong>День {day} · круг {round}</strong>
             </div>
-            <button
-              className={`roles-toggle ${rolesVisible ? "is-active" : ""}`}
-              type="button"
-              aria-pressed={rolesVisible}
-              aria-label={rolesVisible ? "Скрыть роли игроков" : "Показать роли игроков"}
-              onClick={() => setRolesVisible((current) => !current)}
-            >
-              <span className="roles-eye" aria-hidden="true" />
-              <strong>{rolesVisible ? "Скрыть" : "Роли"}</strong>
-            </button>
+            <div className="header-tools">
+              <button
+                className={`roles-toggle ${rolesVisible ? "is-active" : ""}`}
+                type="button"
+                aria-pressed={rolesVisible}
+                aria-label={rolesVisible ? "Скрыть роли игроков" : "Показать роли игроков"}
+                onClick={() => setRolesVisible((current) => !current)}
+              >
+                <span className="roles-eye" aria-hidden="true" />
+                <strong>Роли</strong>
+              </button>
+              <button
+                className={`penalty-toggle ${penaltyPanelOpen ? "is-active" : ""}`}
+                type="button"
+                aria-haspopup="dialog"
+                aria-expanded={penaltyPanelOpen}
+                aria-controls="penalty-panel"
+                aria-label="Открыть фолы и удаления"
+                disabled={!penaltyAvailable}
+                onClick={() => setPenaltyPanelOpen((current) => !current)}
+              >
+                <span aria-hidden="true">!</span>
+                <strong>Фол</strong>
+                {voteSkips > 0 && <b aria-label={`Будет пропущено голосований: ${voteSkips}`}>{voteSkips}</b>}
+              </button>
+            </div>
           </div>
           <div className="stage-status" aria-live="polite">
             <span className="stage-dot" />
@@ -1614,7 +1700,7 @@ export default function Home() {
               </div>
               <div className="quick-actions">
                 <div className="foul-stepper">
-                  <button onClick={removeFoul} disabled={selectedPlayer.fouls === 0} aria-label={`Снять фол у игрока №${selectedSeat}`}><span>−</span></button>
+                  <button onClick={removeFoul} disabled={!selectedPlayer.alive || selectedPlayer.fouls === 0} aria-label={`Снять фол у игрока №${selectedSeat}`}><span>−</span></button>
                   <div><small>Фолы · №{selectedSeat}</small><strong>{selectedPlayer.fouls} / 4</strong></div>
                   <button onClick={addFoul} disabled={!selectedPlayer.alive || selectedPlayer.fouls >= 4} aria-label={`Добавить фол игроку №${selectedSeat}`}><span>+</span></button>
                 </div>
@@ -1661,6 +1747,50 @@ export default function Home() {
             <strong>{stage === "gameOver" ? "↻" : "→"}</strong>
           </button>
         </section>
+
+        {penaltyPanelOpen && penaltyAvailable && (
+          <div className="penalty-overlay" onClick={() => setPenaltyPanelOpen(false)}>
+            <section id="penalty-panel" className="penalty-sheet" role="dialog" aria-modal="true" aria-labelledby="penalty-title" onClick={(event) => event.stopPropagation()}>
+              <div className="penalty-sheet-head">
+                <div><span>Не останавливает таймер</span><strong id="penalty-title">Фолы и удаления</strong></div>
+                <button type="button" onClick={() => setPenaltyPanelOpen(false)} aria-label="Закрыть фолы">×</button>
+              </div>
+              <div className="penalty-seat-picker" aria-label="Выберите игрока">
+                {players.map((player) => (
+                  <button
+                    key={player.seat}
+                    type="button"
+                    className={`${selectedSeat === player.seat ? "is-selected" : ""} ${!player.alive ? "is-out" : ""}`}
+                    onClick={() => setSelectedSeat(player.seat)}
+                    disabled={!player.alive}
+                    aria-pressed={selectedSeat === player.seat}
+                    aria-label={`Игрок №${player.seat}: ${player.fouls} фолов, ${player.yellowCards} жёлтых карточек${player.alive ? "" : ", вне игры"}`}
+                  >
+                    <strong>{player.seat}</strong>
+                    <span><FoulMarks count={player.fouls} />{player.yellowCards > 0 && <YellowMarks count={player.yellowCards} />}</span>
+                  </button>
+                ))}
+              </div>
+              <div className="penalty-selected">
+                <div className="selected-number">{selectedPlayer.seat}</div>
+                <div><span>Игрок</span><strong>{selectedPlayer.name}</strong></div>
+                <div><span>Жёлтые</span><strong>{selectedPlayer.yellowCards} / 2</strong></div>
+              </div>
+              <div className="penalty-actions">
+                <div className="foul-stepper">
+                  <button onClick={removeFoul} disabled={!selectedPlayer.alive || selectedPlayer.fouls === 0} aria-label={`Снять фол у игрока №${selectedSeat}`}><span>−</span></button>
+                  <div><small>Фолы · №{selectedSeat}</small><strong>{selectedPlayer.fouls} / 4</strong></div>
+                  <button onClick={addFoul} disabled={!selectedPlayer.alive || selectedPlayer.fouls >= 4} aria-label={`Добавить фол игроку №${selectedSeat}`}><span>+</span></button>
+                </div>
+                <button className="yellow-action" onClick={addYellowCard} disabled={!selectedPlayer.alive || selectedPlayer.yellowCards >= 2}><span>▰</span><strong>Жёлтая карточка · {selectedPlayer.yellowCards}/2</strong></button>
+              </div>
+              <div className={`penalty-rule ${voteSkips > 0 ? "has-skips" : ""}`}>
+                <span aria-hidden="true">↷</span>
+                <div><strong>{voteSkips > 0 ? `Без голосования: ${voteSkips}` : "Удаление вместо съёма"}</strong><small>Каждое удаление отменяет одно голосование — текущее или ближайшее.</small></div>
+              </div>
+            </section>
+          </div>
+        )}
 
       </section>
     </main>
