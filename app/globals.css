@@ -345,6 +345,7 @@ button:focus-visible {
 
 .stage-vote .table-stage,
 .stage-revote .table-stage,
+.stage-nominationReview .table-stage,
 .stage-lift .table-stage,
 .stage-nightShot .table-stage,
 .stage-nightDon .table-stage,
@@ -818,6 +819,12 @@ button:focus-visible {
 .stage-speech .table-seat.is-eliminated.is-selected {
   opacity: 0.78;
   filter: saturate(0.65);
+}
+
+.stage-nightDon .table-seat.is-eliminated.is-night-target,
+.stage-nightSheriff .table-seat.is-eliminated.is-night-target {
+  opacity: 0.82;
+  filter: saturate(0.75);
 }
 
 .table-seat:disabled {
@@ -1551,6 +1558,269 @@ button:focus-visible {
   color: var(--app-warm);
 }
 
+.farewell-controls {
+  display: grid;
+  gap: 7px;
+}
+
+.farewell-instruction {
+  min-height: 64px;
+}
+
+.farewell-penalties {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.farewell-penalties .foul-stepper {
+  grid-column: 1 / -1;
+}
+
+.farewell-penalties > button {
+  display: grid;
+  min-height: 42px;
+  grid-template-columns: 25px 1fr;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 7px;
+  border: 1px solid rgba(235, 222, 183, 0.09);
+  border-radius: 12px;
+  color: #b8bda6;
+  background: rgba(255, 255, 255, 0.04);
+  text-align: left;
+  cursor: pointer;
+}
+
+.farewell-penalties > button > span {
+  display: grid;
+  width: 23px;
+  height: 23px;
+  place-items: center;
+  border-radius: 7px;
+  color: #e7efbd;
+  background: rgba(216, 233, 142, 0.11);
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.farewell-penalties > .yellow-action > span {
+  color: #2e270f;
+  background: #e3b934;
+  transform: skew(-6deg);
+}
+
+.farewell-penalties > button strong {
+  font-size: 8px;
+}
+
+.farewell-penalties button:disabled {
+  opacity: 0.34;
+  cursor: not-allowed;
+}
+
+.nomination-review-panel {
+  display: grid;
+  gap: 7px;
+}
+
+.nomination-review-head {
+  display: grid;
+  min-height: 43px;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 9px;
+  border: 1px solid rgba(235, 222, 183, 0.08);
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.nomination-review-head > div {
+  display: grid;
+  gap: 2px;
+}
+
+.nomination-review-head span {
+  color: #7b816e;
+  font-size: 7px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.nomination-review-head strong {
+  font-family: Georgia, serif;
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.nomination-review-head > b {
+  display: grid;
+  width: 31px;
+  height: 31px;
+  place-items: center;
+  border-radius: 10px;
+  color: #252c19;
+  background: var(--app-accent);
+  font-family: ui-monospace, monospace;
+}
+
+.nomination-pair-list {
+  display: grid;
+  max-height: 112px;
+  gap: 4px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  scrollbar-width: thin;
+}
+
+.nomination-pair-list > li {
+  display: grid;
+  min-height: 35px;
+  grid-template-columns: 1fr auto;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid rgba(235, 222, 183, 0.07);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.nomination-pair-list > li.is-editing {
+  border-color: rgba(216, 233, 142, 0.35);
+  background: rgba(216, 233, 142, 0.055);
+}
+
+.nomination-pair-main {
+  display: grid;
+  grid-template-columns: 20px 39px 18px 39px;
+  align-items: center;
+  justify-content: start;
+  padding: 0 4px;
+  border: 0;
+  color: #d8dccb;
+  background: transparent;
+  cursor: pointer;
+}
+
+.nomination-pair-main small {
+  color: #707663;
+  font-size: 7px;
+}
+
+.nomination-pair-main strong {
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+}
+
+.nomination-pair-main > span {
+  color: var(--app-warm);
+  font-size: 12px;
+}
+
+.nomination-pair-actions {
+  display: grid;
+  grid-template-columns: 28px;
+}
+
+.nomination-pair-actions button {
+  display: grid;
+  min-height: 27px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(235, 222, 183, 0.07);
+  border-radius: 8px;
+  color: #aeb49f;
+  background: rgba(255, 255, 255, 0.035);
+  cursor: pointer;
+}
+
+.nomination-pair-actions button.is-delete {
+  color: #dc858a;
+}
+
+.nomination-empty {
+  display: grid;
+  min-height: 45px;
+  place-items: center;
+  padding: 7px;
+  border: 1px dashed rgba(235, 222, 183, 0.1);
+  border-radius: 11px;
+  color: #7c826f;
+  font-size: 8px;
+  text-align: center;
+}
+
+.nomination-editor {
+  display: grid;
+  grid-template-columns: 70px 13px 70px 1fr;
+  align-items: end;
+  gap: 5px;
+}
+
+.nomination-editor > label {
+  display: grid;
+  gap: 3px;
+}
+
+.nomination-editor > label > span {
+  color: #747a68;
+  font-size: 7px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.nomination-editor > span {
+  align-self: center;
+  padding-top: 11px;
+  color: var(--app-warm);
+  text-align: center;
+}
+
+.nomination-editor select,
+.nomination-editor > button {
+  min-height: 39px;
+  border: 1px solid rgba(235, 222, 183, 0.1);
+  border-radius: 10px;
+  color: #d8dccb;
+  background: #292e24;
+  font-size: 10px;
+}
+
+.nomination-editor select {
+  width: 100%;
+  padding: 0 7px;
+}
+
+.nomination-editor > button {
+  display: grid;
+  align-content: center;
+  gap: 1px;
+  padding: 4px 8px;
+  color: #252c19;
+  background: var(--app-accent);
+  text-align: left;
+  cursor: pointer;
+}
+
+.nomination-editor > button strong {
+  font-size: 9px;
+}
+
+.nomination-editor > button small {
+  color: rgba(37, 44, 25, 0.63);
+  font-size: 6px;
+}
+
+.nomination-editor > button.nomination-cancel {
+  min-height: 28px;
+  grid-column: 1 / -1;
+  color: #aeb49e;
+  background: rgba(255, 255, 255, 0.035);
+  text-align: center;
+}
+
 .night-instruction > div {
   display: flex;
   align-items: center;
@@ -1712,6 +1982,42 @@ button:focus-visible {
   border: 1px solid rgba(235, 222, 183, 0.08);
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.028);
+}
+
+.check-stage-panel {
+  display: grid;
+  min-height: 88px;
+  grid-template-columns: 1fr 92px;
+  gap: 7px;
+}
+
+.check-stage-panel .check-instruction {
+  min-width: 0;
+}
+
+.skip-check {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 3px;
+  padding: 5px;
+  border: 1px solid rgba(235, 222, 183, 0.09);
+  border-radius: 14px;
+  color: #aeb49e;
+  background: rgba(255, 255, 255, 0.035);
+  text-align: center;
+  cursor: pointer;
+}
+
+.skip-check span {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.skip-check strong {
+  font-size: 7px;
+  line-height: 1.2;
+  text-transform: uppercase;
 }
 
 .shot-control > div > span,
@@ -2759,6 +3065,7 @@ button:focus-visible {
 
   .stage-vote .table-stage,
   .stage-revote .table-stage,
+  .stage-nominationReview .table-stage,
   .stage-lift .table-stage,
   .stage-nightShot .table-stage,
   .stage-nightDon .table-stage,
@@ -2816,6 +3123,7 @@ button:focus-visible {
 
   .stage-vote .table-stage,
   .stage-revote .table-stage,
+  .stage-nominationReview .table-stage,
   .stage-lift .table-stage,
   .stage-nightShot .table-stage,
   .stage-nightDon .table-stage,
@@ -3132,6 +3440,7 @@ button:focus-visible {
 
   .stage-vote .table-stage,
   .stage-revote .table-stage,
+  .stage-nominationReview .table-stage,
   .stage-lift .table-stage,
   .stage-nightShot .table-stage,
   .stage-nightDon .table-stage,
@@ -3139,6 +3448,10 @@ button:focus-visible {
   .stage-nightSummary .table-stage,
   .stage-gameOver .table-stage {
     height: clamp(235px, calc(100dvh - 335px), 325px);
+  }
+
+  .stage-nominationReview .table-stage {
+    height: clamp(235px, calc(100dvh - 361px), 299px);
   }
 
   .table-seat {
@@ -3249,6 +3562,61 @@ button:focus-visible {
   .morning-mark {
     width: 62px;
     height: 62px;
+  }
+}
+
+@media (max-height: 820px) {
+  .farewell-controls {
+    gap: 5px;
+  }
+
+  .farewell-instruction {
+    min-height: 50px;
+  }
+
+  .farewell-penalties .foul-stepper,
+  .farewell-penalties .foul-stepper > button,
+  .farewell-penalties > button {
+    min-height: 38px;
+  }
+
+  .nomination-review-panel {
+    gap: 5px;
+  }
+
+  .nomination-review-head {
+    min-height: 36px;
+    padding: 4px 7px;
+  }
+
+  .nomination-pair-list {
+    max-height: 72px;
+  }
+
+  .nomination-pair-list > li {
+    min-height: 31px;
+  }
+
+  .nomination-editor select,
+  .nomination-editor > button {
+    min-height: 35px;
+  }
+
+  .check-stage-panel,
+  .check-stage-panel .check-instruction {
+    min-height: 68px;
+  }
+}
+
+@media (max-height: 720px) {
+  .nomination-pair-list {
+    max-height: 58px;
+  }
+
+  .farewell-instruction small,
+  .nomination-review-head span,
+  .nomination-empty {
+    display: none;
   }
 }
 
