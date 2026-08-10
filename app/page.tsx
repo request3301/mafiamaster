@@ -1118,6 +1118,13 @@ export default function Home() {
       setToast("Кандидатов нет · автоматически начинается ночь");
       return;
     }
+    if (round === 1 && candidateSeats.length === 1) {
+      setVoteState(emptyVoteState);
+      beginNight();
+      addLog("Нулевой круг · одна кандидатура · голосование пропущено");
+      setToast("Одна кандидатура в нулевом круге · голосование пропущено");
+      return;
+    }
     setVoteState({
       candidates: candidateSeats,
       eligible: alivePlayers.map((player) => player.seat),
