@@ -22,10 +22,12 @@ control to undo the latest recorded action without leaving the current game.
 
 ## Game Flow
 
-- After the final regular speech, review nominations in the full-screen editor.
-  Add, edit, or delete pairs there; each nominator and candidate can appear only
-  once, and order always follows the speech queue. An empty list goes directly
-  to night. A penalty removal that cancels the vote skips this editor.
+- After the final regular speech, review nominations in a compact full-screen
+  table with one row per speaker in the actual speech order. In each row, choose
+  **Никого** or a living candidate to assign, replace, or remove the nomination.
+  A candidate can appear only once, and the non-empty rows set the voting order
+  from top to bottom without manual reordering. An empty table goes directly to
+  night. A penalty removal that cancels the vote skips this review.
 - A tied group receives 30-second speeches and another vote. If the leading set
   changes (for example, five players to three to two), the cycle continues
   without a limit. The lift vote appears only when the same set ties twice in a
