@@ -40,19 +40,18 @@ export function normalizeNominationPairs(pairs: NominationPair[]): NominationPai
 
 export function orderNominationPairsBySpeech(pairs: NominationPair[], speechOrder: number[]): NominationPair[] {
   const rank = new Map(speechOrder.map((seat, index) => [seat, index]));
-  return normalizeNominationPairs([...pairs].sort((left, right) => {
-    const leftRank = rank.get(left.nominatorSeat) ?? speechOrder.length + left.order;
-    const rightRank = rank.get(right.nominatorSeat) ?? speechOrder.length + right.order;
-    return leftRank - rightRank;
-  }));
+  return normalizeNominationPairs(pairs
+    .filter((pair) => rank.has(pair.nominatorSeat))
+    .sort((left, right) => rank.get(left.nominatorSeat)! - rank.get(right.nominatorSeat)!));
 }
 
 export function canSaveNominationPair(
   pairs: NominationPair[],
   pair: Pick<NominationPair, "nominatorSeat" | "candidateSeat">,
+  speechOrder: number[],
   editingOrder: number | null = null,
 ) {
-  return !pairs.some((current) => current.order !== editingOrder && (
+  return speechOrder.includes(pair.nominatorSeat) && !pairs.some((current) => current.order !== editingOrder && (
     current.nominatorSeat === pair.nominatorSeat || current.candidateSeat === pair.candidateSeat
   ));
 }

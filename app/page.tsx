@@ -921,17 +921,21 @@ export default function Home() {
     const usedNominators = new Set(pairs.map((pair) => pair.nominatorSeat));
     const usedCandidates = new Set(pairs.map((pair) => pair.candidateSeat));
     setEditingNominationOrder(null);
-    setDraftNominator(seatOrder.find((seat) => !usedNominators.has(seat)) ?? 1);
+    setDraftNominator(speechOrder.find((seat) => !usedNominators.has(seat)) ?? speechOrder[0] ?? 1);
     setDraftCandidate(seatOrder.find((seat) => !usedCandidates.has(seat) && players.some((player) => player.seat === seat && player.alive)) ?? 1);
   };
 
   const saveNominationDraft = () => {
+    if (!speechOrder.includes(draftNominator)) {
+      setToast(`Игрок №${draftNominator} не входит в очередь речей`);
+      return;
+    }
     const candidate = players.find((player) => player.seat === draftCandidate);
     if (!candidate?.alive) {
       setToast(`Игрок №${draftCandidate} уже вне игры и не участвует в голосовании`);
       return;
     }
-    if (!canSaveNominationPair(nominationPairs, { nominatorSeat: draftNominator, candidateSeat: draftCandidate }, editingNominationOrder)) {
+    if (!canSaveNominationPair(nominationPairs, { nominatorSeat: draftNominator, candidateSeat: draftCandidate }, speechOrder, editingNominationOrder)) {
       setToast("Этот игрок уже выставлял или кандидат уже есть в списке");
       return;
     }
@@ -961,9 +965,11 @@ export default function Home() {
   };
 
   const enterNominationReview = () => {
+    const validPairs = orderNominationPairsBySpeech(nominationPairs, speechOrder);
     setRunning(false);
     setStage("nominationReview");
-    resetNominationDraft();
+    syncNominationPairs(validPairs);
+    resetNominationDraft(validPairs);
     addLog("Проверка выставлений перед голосованием");
   };
 
@@ -1153,6 +1159,11 @@ export default function Home() {
     setStage("vote");
     setRunning(false);
     setToast(`Речи закончены · голосование за игрока №${candidateSeats[0]}`);
+  };
+
+  const confirmNominationReview = () => {
+    remember(nominationPairs.length ? "подтверждение выставлений" : "переход к ночи без выставлений");
+    beginVoting();
   };
 
   const advanceSpeech = () => {
@@ -1702,7 +1713,7 @@ export default function Home() {
     : stage === "farewellSpeech"
       ? advanceFarewell
     : stage === "nominationReview"
-      ? beginVoting
+      ? confirmNominationReview
     : stage === "vote"
       ? confirmVotes
       : stage === "tieSpeech"
@@ -1775,6 +1786,7 @@ export default function Home() {
           </div>
         </header>
 
+        {stage !== "nominationReview" && (
         <section className="table-stage" aria-label="Стол: игрок 1 слева от ведущего, игрок 10 справа">
           <div className="orientation-note"><span>↻</span> 1 → 10 · по часовой</div>
           <div className="table-surface" aria-hidden="true"><div className="table-grain" /><div className="table-inlay" /></div>
@@ -1798,12 +1810,6 @@ export default function Home() {
                 <span>{stage === "vote" ? "Кандидат" : "Переголосование"} {voteState.index + 1} из {voteState.candidates.length}</span>
                 <strong>№{currentCandidate}</strong>
                 <small>{voteState.draft.length} {voteWord(voteState.draft.length)} выбрано</small>
-              </div>
-            ) : stage === "nominationReview" ? (
-              <div className="workflow-center nomination-review-center">
-                <span>Очередь голосования</span>
-                <strong>{nominationPairs.length}</strong>
-                <small>{nominationPairs.length ? nominationPairs.map((pair) => `№${pair.candidateSeat}`).join(" → ") : "добавьте выставления ниже"}</small>
               </div>
             ) : stage === "lift" ? (
               <div className="workflow-center"><span>Поднять {tieSeats.map((seat) => `№${seat}`).join(" и ")}?</span><strong>{liftDraft.length}</strong><small>за · нужно {Math.floor(alivePlayers.length / 2) + 1}</small></div>
@@ -1858,8 +1864,9 @@ export default function Home() {
 
           <div className="master-seat" aria-label="Место ведущего"><span className="master-line" /><span className="master-avatar">M</span><span className="master-copy"><strong>Ведущий</strong><small>ваше место</small></span></div>
         </section>
+        )}
 
-        {nominees.length > 0 && !stage.startsWith("night") && stage !== "farewellSpeech" && stage !== "gameOver" && (
+        {nominees.length > 0 && !stage.startsWith("night") && stage !== "farewellSpeech" && stage !== "nominationReview" && stage !== "gameOver" && (
           <section className="candidate-queue" aria-label="Очередь кандидатур">
             <div><span>Кандидаты</span></div>
             <ol>{nominees.map((player) => {
@@ -1869,7 +1876,7 @@ export default function Home() {
           </section>
         )}
 
-        <section className="control-panel">
+        <section className={`control-panel${stage === "nominationReview" ? " nomination-review-stage" : ""}`}>
           {stage === "speech" && (
             <>
               <div className="selected-player">
@@ -1923,9 +1930,9 @@ export default function Home() {
                 </ol>
               ) : <div className="nomination-empty">Пока никто не выставлен. Можно добавить пару или перейти к ночи.</div>}
               <div className="nomination-editor">
-                <label><span>Кто</span><select value={draftNominator} onChange={(event) => setDraftNominator(Number(event.target.value))}>{players.map((player) => {
-                  const usedByAnother = nominationPairs.some((pair) => pair.order !== editingNominationOrder && pair.nominatorSeat === player.seat);
-                  return <option key={player.seat} value={player.seat} disabled={usedByAnother}>№{player.seat}</option>;
+                <label><span>Кто</span><select value={draftNominator} onChange={(event) => setDraftNominator(Number(event.target.value))}>{speechOrder.map((seat) => {
+                  const usedByAnother = nominationPairs.some((pair) => pair.order !== editingNominationOrder && pair.nominatorSeat === seat);
+                  return <option key={seat} value={seat} disabled={usedByAnother}>№{seat}</option>;
                 })}</select></label>
                 <span aria-hidden="true">→</span>
                 <label><span>Кого</span><select value={draftCandidate} onChange={(event) => setDraftCandidate(Number(event.target.value))}>{players.map((player) => {

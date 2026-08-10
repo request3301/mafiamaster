@@ -26,13 +26,15 @@ test("keeps nomination order while enforcing one nominator and one candidate", (
     { order: 1, nominatorSeat: 5, candidateSeat: 2 },
     { order: 2, nominatorSeat: 3, candidateSeat: 7 },
   ];
-  assert.equal(canSaveNominationPair(pairs, { nominatorSeat: 5, candidateSeat: 8 }), false);
-  assert.equal(canSaveNominationPair(pairs, { nominatorSeat: 8, candidateSeat: 7 }), false);
-  assert.equal(canSaveNominationPair(pairs, { nominatorSeat: 8, candidateSeat: 9 }), true);
-  assert.equal(canSaveNominationPair(pairs, { nominatorSeat: 5, candidateSeat: 8 }, 1), true);
+  const speechOrder = [5, 6, 7, 8, 9, 10, 2, 3, 4];
+  assert.equal(canSaveNominationPair(pairs, { nominatorSeat: 5, candidateSeat: 8 }, speechOrder), false);
+  assert.equal(canSaveNominationPair(pairs, { nominatorSeat: 8, candidateSeat: 7 }, speechOrder), false);
+  assert.equal(canSaveNominationPair(pairs, { nominatorSeat: 8, candidateSeat: 9 }, speechOrder), true);
+  assert.equal(canSaveNominationPair(pairs, { nominatorSeat: 5, candidateSeat: 8 }, speechOrder, 1), true);
+  assert.equal(canSaveNominationPair(pairs, { nominatorSeat: 1, candidateSeat: 9 }, speechOrder), false);
   assert.deepEqual(normalizeNominationPairs([pairs[1], pairs[0]]).map((pair) => pair.order), [1, 2]);
   assert.deepEqual(
-    orderNominationPairsBySpeech([pairs[1], pairs[0]], [5, 6, 7, 8, 9, 10, 1, 2, 3, 4])
+    orderNominationPairsBySpeech([pairs[1], { order: 3, nominatorSeat: 1, candidateSeat: 8 }, pairs[0]], speechOrder)
       .map(({ order, nominatorSeat }) => ({ order, nominatorSeat })),
     [{ order: 1, nominatorSeat: 5 }, { order: 2, nominatorSeat: 3 }],
   );
