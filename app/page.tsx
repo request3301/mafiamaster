@@ -415,6 +415,8 @@ export default function Home() {
   });
 
   const startCountdown = (value: number) => {
+    // Countdown setup runs only from user actions or effects, where reading the wall clock is intentional.
+    // eslint-disable-next-line react-hooks/purity
     deadlineRef.current = Date.now() + value * 1000;
     setTimerBaseSeconds(value);
     setTimerTotalSeconds(value);

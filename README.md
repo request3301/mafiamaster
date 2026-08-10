@@ -1,8 +1,9 @@
-# vinext-starter
+# Mafia Master
 
-A clean full-stack starter running on
-[vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and
-Drizzle support.
+A compact moderator console for a ten-player sports-mafia game. The same
+stateless React interface runs as a Telegram Web App, a vinext site, and a
+static GitHub Pages build; it is designed around a 360×640 viewport and keeps
+the current game only in browser memory.
 
 ## Prerequisites
 
@@ -16,16 +17,41 @@ npm run dev
 npm run build
 ```
 
-This starter does not use `wrangler.jsonc`.
+Refreshing or closing the page starts a new game. Use the in-app **Back**
+control to undo the latest recorded action without leaving the current game.
 
-## Included Shape
+## Game Flow
 
-- edit site code under `app/`
-- `.openai/hosting.json` declares optional Sites D1 and R2 bindings
-- `vite.config.ts` simulates declared bindings for local development
-- `db/schema.ts` starts intentionally empty
-- `examples/d1/` contains an optional D1 example surface
-- `drizzle.config.ts` supports local migration generation when needed
+- After the final regular speech, review nominations in the full-screen editor.
+  Add, edit, or delete pairs there; each nominator and candidate can appear only
+  once, and order always follows the speech queue. An empty list goes directly
+  to night. A penalty removal that cancels the vote skips this editor.
+- A tied group receives 30-second speeches and another vote. If the leading set
+  changes (for example, five players to three to two), the cycle continues
+  without a limit. The lift vote appears only when the same set ties twice in a
+  row, regardless of seat order.
+- Every farewell speech lasts 60 seconds and has controls to add or remove
+  fouls, issue a yellow card, or buy 30 seconds for two fouls. A fourth foul or
+  second yellow ends only the current farewell; it does not create another
+  removal or cancel the completed vote.
+- A Don or Sheriff shot during the current night still receives their
+  15-second check; a role that left during the day does not. Checks may target
+  any other seat, including a previously eliminated player whose role remains
+  known to the app. A check can also be skipped explicitly; the skip is written
+  to the event log and night summary.
+- The shared penalty panel is available during regular and tie speeches, but
+  not during voting or night. Farewell penalties use the dedicated controls on
+  the farewell screen.
+
+## Runtime Shape
+
+- `app/` owns the interface and game rules used by every deployment target.
+- `github-pages/src/main.tsx` mounts that same app for the static build instead
+  of maintaining a second implementation.
+- `.openai/hosting.json` declares no D1 or R2 bindings. The game does not send
+  or persist game state on a server.
+- `vite.config.ts` retains optional local binding support for the example D1
+  surface; the Mafia Master interface does not use it.
 
 ## Workspace Auth Headers
 
@@ -90,9 +116,14 @@ actions tied to the current ChatGPT user. Leave public content anonymous.
 ## Useful Commands
 
 - `npm run dev`: start local development
-- `npm run build`: verify the vinext build output
-- `npm test`: build the starter and verify its rendered loading skeleton
+- `npm run build`: create the production vinext/Sites build
+- `npm run build:pages`: create the static GitHub Pages build in `dist-pages/`
+- `npm test`: build the app and run the game-rule and server-render checks
+- `npm run lint`: run the configured ESLint checks
 - `npm run db:generate`: generate Drizzle migrations after schema changes
+
+The Pages workflow builds on pushes to `main` and can also be started manually.
+Its configured project base path is `/mafiamaster/`.
 
 ## Learn More
 
