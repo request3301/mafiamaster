@@ -10,6 +10,7 @@ import {
   resolveTieOutcome,
   sameSeatSet,
   shouldEndFarewellForPenalty,
+  updateNominationForSpeaker,
 } from "../app/game-rules.ts";
 
 test("continues changing tie groups and lifts only the same repeated group", () => {
@@ -38,6 +39,14 @@ test("keeps nomination order while enforcing one nominator and one candidate", (
       .map(({ order, nominatorSeat }) => ({ order, nominatorSeat })),
     [{ order: 1, nominatorSeat: 5 }, { order: 2, nominatorSeat: 3 }],
   );
+
+  const added = updateNominationForSpeaker(pairs, speechOrder, 8, 9);
+  assert.deepEqual(added?.map((pair) => [pair.nominatorSeat, pair.candidateSeat]), [[5, 2], [8, 9], [3, 7]]);
+  const replaced = updateNominationForSpeaker(added ?? [], speechOrder, 8, 4);
+  assert.deepEqual(replaced?.map((pair) => [pair.nominatorSeat, pair.candidateSeat]), [[5, 2], [8, 4], [3, 7]]);
+  const removed = updateNominationForSpeaker(replaced ?? [], speechOrder, 8, null);
+  assert.deepEqual(removed?.map((pair) => [pair.nominatorSeat, pair.candidateSeat]), [[5, 2], [3, 7]]);
+  assert.equal(updateNominationForSpeaker(pairs, speechOrder, 8, 7), null);
 });
 
 test("a role shot this night still checks, while a daytime departure does not", () => {

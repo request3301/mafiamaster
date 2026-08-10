@@ -1051,13 +1051,8 @@ button:focus-visible {
   grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
-.nomination-review-stage .nomination-pair-list {
-  max-height: none;
+.nomination-review-stage .nomination-table {
   min-height: 0;
-}
-
-.nomination-review-stage .nomination-empty {
-  display: grid;
 }
 
 .selected-player {
@@ -1695,10 +1690,10 @@ button:focus-visible {
   font-family: ui-monospace, monospace;
 }
 
-.nomination-pair-list {
+.nomination-table {
   display: grid;
-  max-height: 112px;
-  gap: 4px;
+  align-content: start;
+  gap: 3px;
   overflow-y: auto;
   margin: 0;
   padding: 0;
@@ -1706,149 +1701,78 @@ button:focus-visible {
   scrollbar-width: thin;
 }
 
-.nomination-pair-list > li {
+.nomination-table > li {
   display: grid;
-  min-height: 35px;
-  grid-template-columns: 1fr auto;
-  gap: 4px;
-  padding: 3px;
+  min-height: 38px;
+  grid-template-columns: minmax(94px, 0.9fr) minmax(138px, 1.1fr);
+  align-items: center;
+  gap: 7px;
+  padding: 3px 4px 3px 7px;
   border: 1px solid rgba(235, 222, 183, 0.07);
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.025);
 }
 
-.nomination-pair-list > li.is-editing {
-  border-color: rgba(216, 233, 142, 0.35);
+.nomination-table > li.has-nomination {
+  border-color: rgba(216, 233, 142, 0.2);
   background: rgba(216, 233, 142, 0.055);
 }
 
-.nomination-pair-main {
+.nomination-speaker {
   display: grid;
-  grid-template-columns: 20px 39px 18px 39px;
+  min-width: 0;
+  grid-template-columns: 17px 32px minmax(0, 1fr);
   align-items: center;
-  justify-content: start;
-  padding: 0 4px;
-  border: 0;
-  color: #d8dccb;
-  background: transparent;
-  cursor: pointer;
+  gap: 4px;
 }
 
-.nomination-pair-main small {
+.nomination-speaker small {
   color: #707663;
   font-size: 7px;
+  text-align: center;
 }
 
-.nomination-pair-main strong {
+.nomination-speaker strong {
+  color: #d8dccb;
   font-family: ui-monospace, monospace;
   font-size: 12px;
 }
 
-.nomination-pair-main > span {
-  color: var(--app-warm);
-  font-size: 12px;
-}
-
-.nomination-pair-actions {
-  display: grid;
-  grid-template-columns: 28px;
-}
-
-.nomination-pair-actions button {
-  display: grid;
-  min-height: 27px;
-  place-items: center;
-  padding: 0;
-  border: 1px solid rgba(235, 222, 183, 0.07);
-  border-radius: 8px;
-  color: #aeb49f;
-  background: rgba(255, 255, 255, 0.035);
-  cursor: pointer;
-}
-
-.nomination-pair-actions button.is-delete {
-  color: #dc858a;
-}
-
-.nomination-empty {
-  display: grid;
-  min-height: 45px;
-  place-items: center;
-  padding: 7px;
-  border: 1px dashed rgba(235, 222, 183, 0.1);
-  border-radius: 11px;
-  color: #7c826f;
-  font-size: 8px;
-  text-align: center;
-}
-
-.nomination-editor {
-  display: grid;
-  grid-template-columns: 70px 13px 70px 1fr;
-  align-items: end;
-  gap: 5px;
-}
-
-.nomination-editor > label {
-  display: grid;
-  gap: 3px;
-}
-
-.nomination-editor > label > span {
-  color: #747a68;
+.nomination-speaker span {
+  overflow: hidden;
+  color: #777d6a;
   font-size: 7px;
-  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nomination-table label {
+  position: relative;
+  display: grid;
+  min-width: 0;
+}
+
+.nomination-table label > span {
+  position: absolute;
+  z-index: 1;
+  top: 4px;
+  left: 9px;
+  pointer-events: none;
+  color: #777d6a;
+  font-size: 6px;
+  font-weight: 800;
   text-transform: uppercase;
 }
 
-.nomination-editor > span {
-  align-self: center;
-  padding-top: 11px;
-  color: var(--app-warm);
-  text-align: center;
-}
-
-.nomination-editor select,
-.nomination-editor > button {
-  min-height: 39px;
+.nomination-table select {
+  width: 100%;
+  min-height: 31px;
+  padding: 11px 24px 2px 8px;
   border: 1px solid rgba(235, 222, 183, 0.1);
-  border-radius: 10px;
+  border-radius: 8px;
   color: #d8dccb;
   background: #292e24;
-  font-size: 10px;
-}
-
-.nomination-editor select {
-  width: 100%;
-  padding: 0 7px;
-}
-
-.nomination-editor > button {
-  display: grid;
-  align-content: center;
-  gap: 1px;
-  padding: 4px 8px;
-  color: #252c19;
-  background: var(--app-accent);
-  text-align: left;
-  cursor: pointer;
-}
-
-.nomination-editor > button strong {
   font-size: 9px;
-}
-
-.nomination-editor > button small {
-  color: rgba(37, 44, 25, 0.63);
-  font-size: 6px;
-}
-
-.nomination-editor > button.nomination-cancel {
-  min-height: 28px;
-  grid-column: 1 / -1;
-  color: #aeb49e;
-  background: rgba(255, 255, 255, 0.035);
-  text-align: center;
 }
 
 .night-instruction > div {
@@ -3612,17 +3536,8 @@ button:focus-visible {
     padding: 4px 7px;
   }
 
-  .nomination-pair-list {
-    max-height: 72px;
-  }
-
-  .nomination-pair-list > li {
-    min-height: 31px;
-  }
-
-  .nomination-editor select,
-  .nomination-editor > button {
-    min-height: 35px;
+  .nomination-table > li {
+    min-height: 36px;
   }
 
   .check-stage-panel,
@@ -3632,13 +3547,24 @@ button:focus-visible {
 }
 
 @media (max-height: 720px) {
-  .nomination-pair-list {
-    max-height: 58px;
+  .nomination-table {
+    gap: 2px;
+  }
+
+  .nomination-table > li {
+    min-height: 34px;
+  }
+
+  .nomination-speaker {
+    grid-template-columns: 17px 32px;
+  }
+
+  .nomination-speaker span {
+    display: none;
   }
 
   .farewell-instruction small,
-  .nomination-review-head span,
-  .nomination-empty {
+  .nomination-review-head span {
     display: none;
   }
 }

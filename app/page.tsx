@@ -3,13 +3,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   canPerformNightCheck,
-  canSaveNominationPair,
   getWinner,
   nextNightStageAfterSkip,
-  normalizeNominationPairs,
   orderNominationPairsBySpeech,
   resolveTieOutcome,
   shouldEndFarewellForPenalty,
+  updateNominationForSpeaker,
   type NominationPair,
   type Winner,
 } from "./game-rules";
@@ -305,9 +304,6 @@ export default function Home() {
   const [eventLog, setEventLog] = useState<string[]>(["Выберите способ раздачи ролей"]);
   const [history, setHistory] = useState<UndoEntry[]>([]);
   const [penaltyPanelOpen, setPenaltyPanelOpen] = useState(false);
-  const [editingNominationOrder, setEditingNominationOrder] = useState<number | null>(null);
-  const [draftNominator, setDraftNominator] = useState(1);
-  const [draftCandidate, setDraftCandidate] = useState(2);
   const [, setToast] = useState<string | null>(null);
   const deadlineRef = useRef(0);
   const manualAssignLockRef = useRef(false);
@@ -475,7 +471,6 @@ export default function Home() {
 
   const restoreSnapshot = (snapshot: GameSnapshot) => {
     setPenaltyPanelOpen(false);
-    setEditingNominationOrder(null);
     setPlayers(snapshot.players);
     setStage(snapshot.stage);
     setDealMethod(snapshot.dealMethod);
@@ -647,9 +642,6 @@ export default function Home() {
     setEventLog(["Выберите способ раздачи ролей"]);
     setHistory([]);
     setPenaltyPanelOpen(false);
-    setEditingNominationOrder(null);
-    setDraftNominator(1);
-    setDraftCandidate(2);
     setToast(null);
   };
 
@@ -748,9 +740,6 @@ export default function Home() {
     setEventLog(["Первая ночь · договорка 60 секунд"]);
     setHistory([]);
     setPenaltyPanelOpen(false);
-    setEditingNominationOrder(null);
-    setDraftNominator(1);
-    setDraftCandidate(2);
     startCountdown(60);
     setToast("Просыпается мафия · договорка началась");
   };
@@ -919,51 +908,32 @@ export default function Home() {
     ]);
   };
 
-  const resetNominationDraft = (pairs: NominationPair[] = nominationPairs) => {
-    const usedNominators = new Set(pairs.map((pair) => pair.nominatorSeat));
-    const usedCandidates = new Set(pairs.map((pair) => pair.candidateSeat));
-    setEditingNominationOrder(null);
-    setDraftNominator(speechOrder.find((seat) => !usedNominators.has(seat)) ?? speechOrder[0] ?? 1);
-    setDraftCandidate(seatOrder.find((seat) => !usedCandidates.has(seat) && players.some((player) => player.seat === seat && player.alive)) ?? 1);
-  };
-
-  const saveNominationDraft = () => {
-    if (!speechOrder.includes(draftNominator)) {
-      setToast(`Игрок №${draftNominator} не входит в очередь речей`);
-      return;
-    }
-    const candidate = players.find((player) => player.seat === draftCandidate);
-    if (!candidate?.alive) {
-      setToast(`Игрок №${draftCandidate} уже вне игры и не участвует в голосовании`);
-      return;
-    }
-    if (!canSaveNominationPair(nominationPairs, { nominatorSeat: draftNominator, candidateSeat: draftCandidate }, speechOrder, editingNominationOrder)) {
-      setToast("Этот игрок уже выставлял или кандидат уже есть в списке");
+  const changeSpeakerNomination = (nominatorSeat: number, rawCandidate: string) => {
+    const candidateSeat = rawCandidate === "" ? null : Number(rawCandidate);
+    const currentPair = nominationPairs.find((pair) => pair.nominatorSeat === nominatorSeat);
+    if ((currentPair?.candidateSeat ?? null) === candidateSeat) return;
+    if (candidateSeat !== null && !players.some((player) => player.seat === candidateSeat && player.alive)) {
+      setToast(`Игрок №${candidateSeat} уже вне игры и не участвует в голосовании`);
       return;
     }
 
-    remember(editingNominationOrder === null ? "добавление выставления" : "исправление выставления");
-    const nextPairs = editingNominationOrder === null
-      ? [...nominationPairs, { order: nominationPairs.length + 1, nominatorSeat: draftNominator, candidateSeat: draftCandidate }]
-      : nominationPairs.map((pair) => pair.order === editingNominationOrder
-        ? { ...pair, nominatorSeat: draftNominator, candidateSeat: draftCandidate }
-        : pair);
+    const nextPairs = updateNominationForSpeaker(nominationPairs, speechOrder, nominatorSeat, candidateSeat);
+    if (!nextPairs) {
+      setToast("Этот кандидат уже выставлен другим игроком");
+      return;
+    }
+
+    remember(candidateSeat === null
+      ? `удаление выставления игрока №${nominatorSeat}`
+      : currentPair
+        ? `исправление выставления игрока №${nominatorSeat}`
+        : `добавление выставления игрока №${nominatorSeat}`);
     syncNominationPairs(nextPairs);
-    resetNominationDraft(nextPairs);
-    addLog(`Выставления проверены: №${draftNominator} → №${draftCandidate}`);
-  };
-
-  const editNominationPair = (pair: NominationPair) => {
-    setEditingNominationOrder(pair.order);
-    setDraftNominator(pair.nominatorSeat);
-    setDraftCandidate(pair.candidateSeat);
-  };
-
-  const deleteNominationPair = (order: number) => {
-    remember("удаление выставления");
-    const nextPairs = normalizeNominationPairs(nominationPairs.filter((pair) => pair.order !== order));
-    syncNominationPairs(nextPairs);
-    resetNominationDraft(nextPairs);
+    const message = candidateSeat === null
+      ? `Игрок №${nominatorSeat}: выставление убрано`
+      : `Игрок №${nominatorSeat} выставил №${candidateSeat}`;
+    addLog(message);
+    setToast(message);
   };
 
   const enterNominationReview = () => {
@@ -971,7 +941,6 @@ export default function Home() {
     setRunning(false);
     setStage("nominationReview");
     syncNominationPairs(validPairs);
-    resetNominationDraft(validPairs);
     addLog("Проверка выставлений перед голосованием");
   };
 
@@ -1157,7 +1126,6 @@ export default function Home() {
       draft: [],
     });
     setTieCycle(0);
-    setEditingNominationOrder(null);
     setStage("vote");
     setRunning(false);
     setToast(`Речи закончены · голосование за игрока №${candidateSeats[0]}`);
@@ -1916,34 +1884,36 @@ export default function Home() {
 
           {stage === "nominationReview" && (
             <div className="nomination-review-panel">
-              <div className="nomination-review-head"><div><span>Перед голосованием</span><strong>Кто кого выставил</strong></div><b>{nominationPairs.length}</b></div>
-              {nominationPairs.length > 0 ? (
-                <ol className="nomination-pair-list">
-                  {nominationPairs.map((pair, index) => (
-                    <li key={pair.order} className={editingNominationOrder === pair.order ? "is-editing" : ""}>
-                      <button className="nomination-pair-main" type="button" onClick={() => editNominationPair(pair)} aria-label={`Исправить выставление: игрок №${pair.nominatorSeat} выставил №${pair.candidateSeat}`}>
-                        <small>{index + 1}</small><strong>№{pair.nominatorSeat}</strong><span>→</span><strong>№{pair.candidateSeat}</strong>
-                      </button>
-                      <div className="nomination-pair-actions">
-                        <button type="button" className="is-delete" onClick={() => deleteNominationPair(pair.order)} aria-label="Удалить выставление">×</button>
+              <div className="nomination-review-head"><div><span>Перед голосованием</span><strong>Выставления по речам</strong></div><b>{nominationPairs.length}</b></div>
+              <ol className="nomination-table" aria-label="Выставления игроков по очереди речей">
+                {speechOrder.map((seat, index) => {
+                  const speaker = players.find((player) => player.seat === seat)!;
+                  const pair = nominationPairs.find((entry) => entry.nominatorSeat === seat);
+                  return (
+                    <li key={seat} className={pair ? "has-nomination" : ""}>
+                      <div className="nomination-speaker">
+                        <small>{index + 1}</small>
+                        <strong>№{seat}</strong>
+                        <span>{speaker.name}</span>
                       </div>
+                      <label>
+                        <span>{pair ? `выставил №${pair.candidateSeat}` : "не выставлял"}</span>
+                        <select
+                          aria-label={`Выставление игрока №${seat}`}
+                          value={pair?.candidateSeat ?? ""}
+                          onChange={(event) => changeSpeakerNomination(seat, event.target.value)}
+                        >
+                          <option value="">Никого</option>
+                          {players.filter((player) => player.alive).map((player) => {
+                            const usedByAnother = nominationPairs.some((entry) => entry.nominatorSeat !== seat && entry.candidateSeat === player.seat);
+                            return <option key={player.seat} value={player.seat} disabled={usedByAnother}>Игрок №{player.seat}</option>;
+                          })}
+                        </select>
+                      </label>
                     </li>
-                  ))}
-                </ol>
-              ) : <div className="nomination-empty">Пока никто не выставлен. Можно добавить пару или перейти к ночи.</div>}
-              <div className="nomination-editor">
-                <label><span>Кто</span><select value={draftNominator} onChange={(event) => setDraftNominator(Number(event.target.value))}>{speechOrder.map((seat) => {
-                  const usedByAnother = nominationPairs.some((pair) => pair.order !== editingNominationOrder && pair.nominatorSeat === seat);
-                  return <option key={seat} value={seat} disabled={usedByAnother}>№{seat}</option>;
-                })}</select></label>
-                <span aria-hidden="true">→</span>
-                <label><span>Кого</span><select value={draftCandidate} onChange={(event) => setDraftCandidate(Number(event.target.value))}>{players.map((player) => {
-                  const usedByAnother = nominationPairs.some((pair) => pair.order !== editingNominationOrder && pair.candidateSeat === player.seat);
-                  return <option key={player.seat} value={player.seat} disabled={usedByAnother || !player.alive}>№{player.seat}{!player.alive ? " · вне игры" : ""}</option>;
-                })}</select></label>
-                <button type="button" onClick={saveNominationDraft}><strong>{editingNominationOrder === null ? "Добавить" : "Сохранить"}</strong><small>{editingNominationOrder === null ? "по очереди речей" : "порядок по речи"}</small></button>
-                {editingNominationOrder !== null && <button type="button" className="nomination-cancel" onClick={() => resetNominationDraft()}>Отмена</button>}
-              </div>
+                  );
+                })}
+              </ol>
             </div>
           )}
 

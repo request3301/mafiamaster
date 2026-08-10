@@ -56,6 +56,26 @@ export function canSaveNominationPair(
   ));
 }
 
+export function updateNominationForSpeaker(
+  pairs: NominationPair[],
+  speechOrder: number[],
+  nominatorSeat: number,
+  candidateSeat: number | null,
+): NominationPair[] | null {
+  if (!speechOrder.includes(nominatorSeat)) return null;
+  if (candidateSeat !== null && pairs.some((pair) => (
+    pair.nominatorSeat !== nominatorSeat && pair.candidateSeat === candidateSeat
+  ))) return null;
+
+  const remaining = pairs.filter((pair) => pair.nominatorSeat !== nominatorSeat);
+  if (candidateSeat === null) return orderNominationPairsBySpeech(remaining, speechOrder);
+
+  return orderNominationPairsBySpeech([
+    ...remaining,
+    { order: pairs.length + 1, nominatorSeat, candidateSeat },
+  ], speechOrder);
+}
+
 export function canPerformNightCheck(aliveAtNightStart: boolean, shotThisNight: boolean) {
   return aliveAtNightStart || shotThisNight;
 }
