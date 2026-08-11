@@ -27,7 +27,10 @@ control to undo the latest recorded action without leaving the current game.
   **Никого** or a living candidate to assign, replace, or remove the nomination.
   A candidate can appear only once, and the non-empty rows set the voting order
   from top to bottom without manual reordering. An empty table goes directly to
-  night. A penalty removal that cancels the vote skips this review.
+  night. In the initial (zero) round, one nominee skips the voting screen and
+  proceeds directly to night; two or more nominees use the normal voting flow,
+  and this single-nominee shortcut does not apply in later rounds. A penalty
+  removal that cancels the vote skips this review.
 - A tied group receives 30-second speeches and another vote. If the leading set
   changes (for example, five players to three to two), the cycle continues
   without a limit. The lift vote appears only when the same set ties twice in a
