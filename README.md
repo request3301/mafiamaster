@@ -3,7 +3,8 @@
 A compact moderator console for a ten-player sports-mafia game. The same
 stateless React interface runs as a Telegram Web App, a vinext site, and a
 static GitHub Pages build; it is designed around a 360×640 viewport and keeps
-the current game only in browser memory.
+the current game state only in browser memory. Host timer preferences are
+stored locally on the host device.
 
 ## Prerequisites
 
@@ -19,6 +20,11 @@ npm run build
 
 Refreshing or closing the page starts a new game. Use the in-app **Back**
 control to undo the latest recorded action without leaving the current game.
+Open the gear button to set regular speech to 50 seconds, 60 seconds, or a
+custom duration, and free seating to 40 seconds or a custom duration. In
+Telegram, preferences use the Mini App `DeviceStorage`; in a regular browser
+or an older Telegram client, they fall back to `localStorage`. Saving changes
+affects timers started afterward, not a countdown already in progress.
 
 ## Game Flow
 
