@@ -36,7 +36,7 @@ control to undo the latest recorded action without leaving the current game.
   without a limit. The lift vote appears only when the same set ties twice in a
   row, regardless of seat order.
 - Every farewell speech lasts 60 seconds and has controls to add or remove
-  fouls, issue a yellow card, or buy 30 seconds for two fouls. A fourth foul or
+  fouls and yellow cards, or buy 30 seconds for two fouls. A fourth foul or
   second yellow ends only the current farewell; it does not create another
   removal or cancel the completed vote.
 - A Don or Sheriff shot during the current night still receives their

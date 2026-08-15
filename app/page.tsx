@@ -866,6 +866,18 @@ export default function Home() {
     }
   };
 
+  const removeYellowCard = () => {
+    if (!selectedPlayer.alive || selectedPlayer.yellowCards <= 0) return;
+    remember(`снятие жёлтой карточки у игрока №${selectedSeat}`);
+    const nextCards = selectedPlayer.yellowCards - 1;
+    setPlayers((current) => current.map((player) => player.seat === selectedSeat
+      ? { ...player, yellowCards: nextCards }
+      : player));
+    const message = `У игрока №${selectedSeat} снята жёлтая карточка · осталось ${nextCards}`;
+    addLog(message);
+    setToast(message);
+  };
+
   const toggleNomination = () => {
     if (!selectedPlayer.alive) return;
     if (selectedPlayer.nomination !== null) {
@@ -1862,13 +1874,19 @@ export default function Home() {
                 <div className="selected-fouls"><span>{selectedPlayer.fouls} / 4 фола</span><FoulMarks count={selectedPlayer.fouls} /><small>ЖК {selectedPlayer.yellowCards} / 2</small></div>
               </div>
               <div className="quick-actions">
-                <div className="foul-stepper">
-                  <button onClick={removeFoul} disabled={!selectedPlayer.alive || selectedPlayer.fouls === 0} aria-label={`Снять фол у игрока №${selectedSeat}`}><span>−</span></button>
-                  <div><small>Фолы · №{selectedSeat}</small><strong>{selectedPlayer.fouls} / 4</strong></div>
-                  <button onClick={addFoul} disabled={!selectedPlayer.alive || selectedPlayer.fouls >= 4} aria-label={`Добавить фол игроку №${selectedSeat}`}><span>+</span></button>
+                <div className="penalty-stepper-row">
+                  <div className="foul-stepper">
+                    <button onClick={removeFoul} disabled={!selectedPlayer.alive || selectedPlayer.fouls === 0} aria-label={`Снять фол у игрока №${selectedSeat}`}><span>−</span></button>
+                    <div><small>Фолы · №{selectedSeat}</small><strong>{selectedPlayer.fouls} / 4</strong></div>
+                    <button onClick={addFoul} disabled={!selectedPlayer.alive || selectedPlayer.fouls >= 4} aria-label={`Добавить фол игроку №${selectedSeat}`}><span>+</span></button>
+                  </div>
+                  <div className="yellow-stepper">
+                    <button onClick={removeYellowCard} disabled={!selectedPlayer.alive || selectedPlayer.yellowCards === 0} aria-label={`Снять жёлтую карточку у игрока №${selectedSeat}`}><span>−</span></button>
+                    <div><small>ЖК · №{selectedSeat}</small><strong>{selectedPlayer.yellowCards} / 2</strong></div>
+                    <button onClick={addYellowCard} disabled={!selectedPlayer.alive || selectedPlayer.yellowCards >= 2} aria-label={`Показать жёлтую карточку игроку №${selectedSeat}`}><span>+</span></button>
+                  </div>
                 </div>
                 <button onClick={toggleNomination} disabled={!selectedPlayer.alive || selectedPlayer.nomination !== null || Boolean(currentNomination)}><span>{selectedPlayer.nomination || currentNomination ? "✓" : "↓"}</span><strong>{selectedPlayer.nomination ? "Уже в списке" : currentNomination ? "Кандидат выставлен" : `Выставить №${selectedSeat}`}</strong></button>
-                <button className="yellow-action" onClick={addYellowCard} disabled={!selectedPlayer.alive || selectedPlayer.yellowCards >= 2}><span>▰</span><strong>Жёлтая · {selectedPlayer.yellowCards}/2</strong></button>
                 <button className="buy-time-action" onClick={buyTime} disabled={!currentPlayer.alive}><span>+30</span><strong>Речь №{currentSeat} · 2 фола</strong></button>
               </div>
             </>
@@ -1878,12 +1896,18 @@ export default function Home() {
             <div className="farewell-controls">
               <div className="simple-instruction farewell-instruction"><span>{farewellState?.reason === "shot" ? "Убитый игрок" : "По результату голосования"}</span><strong>Игрок №{currentSeat} · 60 секунд</strong><small>4-й фол или вторая жёлтая сразу завершат эту речь</small></div>
               <div className="farewell-penalties">
-                <div className="foul-stepper">
-                  <button onClick={removeFoul} disabled={currentPlayer.fouls === 0} aria-label={`Снять фол у уходящего игрока №${currentSeat}`}><span>−</span></button>
-                  <div><small>Фолы · №{currentSeat}</small><strong>{currentPlayer.fouls} / 4</strong></div>
-                  <button onClick={addFoul} disabled={currentPlayer.fouls >= 4} aria-label={`Добавить фол уходящему игроку №${currentSeat}`}><span>+</span></button>
+                <div className="penalty-stepper-row">
+                  <div className="foul-stepper">
+                    <button onClick={removeFoul} disabled={currentPlayer.fouls === 0} aria-label={`Снять фол у уходящего игрока №${currentSeat}`}><span>−</span></button>
+                    <div><small>Фолы · №{currentSeat}</small><strong>{currentPlayer.fouls} / 4</strong></div>
+                    <button onClick={addFoul} disabled={currentPlayer.fouls >= 4} aria-label={`Добавить фол уходящему игроку №${currentSeat}`}><span>+</span></button>
+                  </div>
+                  <div className="yellow-stepper">
+                    <button onClick={removeYellowCard} disabled={currentPlayer.yellowCards === 0} aria-label={`Снять жёлтую карточку у уходящего игрока №${currentSeat}`}><span>−</span></button>
+                    <div><small>ЖК · №{currentSeat}</small><strong>{currentPlayer.yellowCards} / 2</strong></div>
+                    <button onClick={addYellowCard} disabled={currentPlayer.yellowCards >= 2} aria-label={`Показать жёлтую карточку уходящему игроку №${currentSeat}`}><span>+</span></button>
+                  </div>
                 </div>
-                <button className="yellow-action" onClick={addYellowCard} disabled={currentPlayer.yellowCards >= 2}><span>▰</span><strong>Жёлтая · {currentPlayer.yellowCards}/2</strong></button>
                 <button className="buy-time-action" onClick={buyTime}><span>+30</span><strong>30 секунд · 2 фола</strong></button>
               </div>
             </div>
@@ -1988,12 +2012,18 @@ export default function Home() {
                 <div><span>Жёлтые</span><strong>{selectedPlayer.yellowCards} / 2</strong></div>
               </div>
               <div className="penalty-actions">
-                <div className="foul-stepper">
-                  <button onClick={removeFoul} disabled={!selectedPlayer.alive || selectedPlayer.fouls === 0} aria-label={`Снять фол у игрока №${selectedSeat}`}><span>−</span></button>
-                  <div><small>Фолы · №{selectedSeat}</small><strong>{selectedPlayer.fouls} / 4</strong></div>
-                  <button onClick={addFoul} disabled={!selectedPlayer.alive || selectedPlayer.fouls >= 4} aria-label={`Добавить фол игроку №${selectedSeat}`}><span>+</span></button>
+                <div className="penalty-stepper-row">
+                  <div className="foul-stepper">
+                    <button onClick={removeFoul} disabled={!selectedPlayer.alive || selectedPlayer.fouls === 0} aria-label={`Снять фол у игрока №${selectedSeat}`}><span>−</span></button>
+                    <div><small>Фолы · №{selectedSeat}</small><strong>{selectedPlayer.fouls} / 4</strong></div>
+                    <button onClick={addFoul} disabled={!selectedPlayer.alive || selectedPlayer.fouls >= 4} aria-label={`Добавить фол игроку №${selectedSeat}`}><span>+</span></button>
+                  </div>
+                  <div className="yellow-stepper">
+                    <button onClick={removeYellowCard} disabled={!selectedPlayer.alive || selectedPlayer.yellowCards === 0} aria-label={`Снять жёлтую карточку у игрока №${selectedSeat}`}><span>−</span></button>
+                    <div><small>ЖК · №{selectedSeat}</small><strong>{selectedPlayer.yellowCards} / 2</strong></div>
+                    <button onClick={addYellowCard} disabled={!selectedPlayer.alive || selectedPlayer.yellowCards >= 2} aria-label={`Показать жёлтую карточку игроку №${selectedSeat}`}><span>+</span></button>
+                  </div>
                 </div>
-                <button className="yellow-action" onClick={addYellowCard} disabled={!selectedPlayer.alive || selectedPlayer.yellowCards >= 2}><span>▰</span><strong>Жёлтая карточка · {selectedPlayer.yellowCards}/2</strong></button>
               </div>
               <div className={`penalty-rule ${voteSkips > 0 ? "has-skips" : ""}`}>
                 <span aria-hidden="true">↷</span>
