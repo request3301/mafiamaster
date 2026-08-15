@@ -13,6 +13,15 @@ import {
   type Winner,
 } from "./game-rules";
 import { restoreNumberedCard, takeNumberedCard } from "./role-deal";
+import {
+  DEFAULT_HOST_SETTINGS,
+  HOST_SETTINGS_STORAGE_KEY,
+  MAX_TIMER_SECONDS,
+  MIN_TIMER_SECONDS,
+  normalizeTimerSeconds,
+  parseHostSettings,
+  type HostSettings,
+} from "./host-settings";
 
 type Stage =
   | "dealChoice"
@@ -38,6 +47,12 @@ type Stage =
 type Role = "Мирный" | "Мафия" | "Дон" | "Шериф";
 type DealMethod = "app" | "cards" | null;
 type VoteMap = Record<number, number[]>;
+type SpeechSettingMode = "50" | "60" | "custom";
+type FreeSeatingSettingMode = "40" | "custom";
+type SettingsDraft = {
+  speechSeconds: string;
+  freeSeatingSeconds: string;
+};
 type EliminationReason = "fouls" | "yellowCards" | "vote" | "shot" | null;
 type FarewellState = {
   seats: number[];
@@ -124,10 +139,16 @@ type UndoEntry = {
   snapshot: GameSnapshot;
 };
 
+type TelegramDeviceStorage = {
+  getItem: (key: string, callback: (error: string | null, value?: string) => void) => TelegramDeviceStorage;
+  setItem: (key: string, value: string, callback?: (error: string | null, stored?: boolean) => void) => TelegramDeviceStorage;
+};
+
 type TelegramWebApp = {
   ready: () => void;
   expand: () => void;
   isVersionAtLeast?: (version: string) => boolean;
+  DeviceStorage?: TelegramDeviceStorage;
   setHeaderColor?: (color: string) => void;
   setBackgroundColor?: (color: string) => void;
   setBottomBarColor?: (color: string) => void;
@@ -279,6 +300,14 @@ function roleForCheckResult(result: "Шериф" | "Не шериф" | "Мафи
   return null;
 }
 
+function getTelegramDeviceStorage() {
+  if (typeof window === "undefined") return null;
+  const webApp = window.Telegram?.WebApp;
+  if (!webApp?.DeviceStorage) return null;
+  if (webApp.isVersionAtLeast && !webApp.isVersionAtLeast("9.0")) return null;
+  return webApp.DeviceStorage;
+}
+
 export default function Home() {
   const [players, setPlayers] = useState(initialPlayers);
   const [stage, setStage] = useState<Stage>("dealChoice");
@@ -313,9 +342,67 @@ export default function Home() {
   const [eventLog, setEventLog] = useState<string[]>(["Выберите способ раздачи ролей"]);
   const [history, setHistory] = useState<UndoEntry[]>([]);
   const [penaltyPanelOpen, setPenaltyPanelOpen] = useState(false);
+  const [settings, setSettings] = useState<HostSettings>(DEFAULT_HOST_SETTINGS);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsDraft, setSettingsDraft] = useState<SettingsDraft>({
+    speechSeconds: String(DEFAULT_HOST_SETTINGS.speechSeconds),
+    freeSeatingSeconds: String(DEFAULT_HOST_SETTINGS.freeSeatingSeconds),
+  });
+  const [speechSettingMode, setSpeechSettingMode] = useState<SpeechSettingMode>("50");
+  const [freeSeatingSettingMode, setFreeSeatingSettingMode] = useState<FreeSeatingSettingMode>("40");
   const [, setToast] = useState<string | null>(null);
   const deadlineRef = useRef(0);
   const manualAssignLockRef = useRef(false);
+  const settingsChangedRef = useRef(false);
+
+  useEffect(() => {
+    let localSerialized: string | null = null;
+    let localSettings = DEFAULT_HOST_SETTINGS;
+    try {
+      localSerialized = window.localStorage.getItem(HOST_SETTINGS_STORAGE_KEY);
+      localSettings = parseHostSettings(localSerialized);
+      setSettings(localSettings);
+    } catch {
+      // Some embedded browsers can deny storage access; defaults still keep the app usable.
+    }
+
+    const deviceStorage = getTelegramDeviceStorage();
+    if (!deviceStorage) return;
+    let disposed = false;
+
+    try {
+      deviceStorage.getItem(HOST_SETTINGS_STORAGE_KEY, (error, value) => {
+        if (disposed || settingsChangedRef.current) return;
+        if (!error && value) {
+          const deviceSettings = parseHostSettings(value);
+          setSettings(deviceSettings);
+          try {
+            window.localStorage.setItem(HOST_SETTINGS_STORAGE_KEY, JSON.stringify(deviceSettings));
+          } catch {
+            // DeviceStorage remains the source of truth inside Telegram.
+          }
+        } else if (!error && localSerialized) {
+          // Move settings saved by earlier versions into Telegram's persistent storage.
+          deviceStorage.setItem(HOST_SETTINGS_STORAGE_KEY, JSON.stringify(localSettings));
+        }
+      });
+    } catch {
+      // Older or restricted Telegram clients continue with the browser fallback.
+    }
+
+    return () => {
+      disposed = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!settingsOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setSettingsOpen(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [settingsOpen]);
 
   useEffect(() => {
     const webApp = window.Telegram?.WebApp;
@@ -388,6 +475,75 @@ export default function Home() {
   }, { Мирный: 0, Мафия: 0, Дон: 0, Шериф: 0 });
   const selectedAppRole = selectedAppCardIndex === null ? null : appRoleDeck[selectedAppCardIndex] ?? null;
 
+  const speechDraftNumber = Number(settingsDraft.speechSeconds);
+  const freeSeatingDraftNumber = Number(settingsDraft.freeSeatingSeconds);
+  const speechDraftValid = speechSettingMode !== "custom" || (
+    settingsDraft.speechSeconds.trim() !== ""
+    && Number.isFinite(speechDraftNumber)
+    && speechDraftNumber >= MIN_TIMER_SECONDS
+    && speechDraftNumber <= MAX_TIMER_SECONDS
+  );
+  const freeSeatingDraftValid = freeSeatingSettingMode !== "custom" || (
+    settingsDraft.freeSeatingSeconds.trim() !== ""
+    && Number.isFinite(freeSeatingDraftNumber)
+    && freeSeatingDraftNumber >= MIN_TIMER_SECONDS
+    && freeSeatingDraftNumber <= MAX_TIMER_SECONDS
+  );
+  const settingsDraftValid = speechDraftValid && freeSeatingDraftValid;
+
+  const openSettings = () => {
+    setSettingsDraft({
+      speechSeconds: String(settings.speechSeconds),
+      freeSeatingSeconds: String(settings.freeSeatingSeconds),
+    });
+    setSpeechSettingMode(settings.speechSeconds === 50 ? "50" : settings.speechSeconds === 60 ? "60" : "custom");
+    setFreeSeatingSettingMode(settings.freeSeatingSeconds === 40 ? "40" : "custom");
+    setPenaltyPanelOpen(false);
+    setSettingsOpen(true);
+  };
+
+  const saveSettings = () => {
+    if (!settingsDraftValid) return;
+    const nextSettings: HostSettings = {
+      speechSeconds: speechSettingMode === "50"
+        ? 50
+        : speechSettingMode === "60"
+          ? 60
+          : normalizeTimerSeconds(settingsDraft.speechSeconds, settings.speechSeconds),
+      freeSeatingSeconds: freeSeatingSettingMode === "40"
+        ? 40
+        : normalizeTimerSeconds(settingsDraft.freeSeatingSeconds, settings.freeSeatingSeconds),
+    };
+
+    settingsChangedRef.current = true;
+    setSettings(nextSettings);
+    setSettingsOpen(false);
+    const serialized = JSON.stringify(nextSettings);
+    let browserStored = false;
+    try {
+      window.localStorage.setItem(HOST_SETTINGS_STORAGE_KEY, serialized);
+      browserStored = true;
+    } catch {}
+
+    const deviceStorage = getTelegramDeviceStorage();
+    if (!deviceStorage) {
+      setToast(browserStored ? "Настройки сохранены на этом устройстве" : "Настройки применены до закрытия приложения");
+      return;
+    }
+
+    try {
+      deviceStorage.setItem(HOST_SETTINGS_STORAGE_KEY, serialized, (error, stored) => {
+        setToast(!error && stored !== false
+          ? "Настройки сохранены в Telegram на этом устройстве"
+          : browserStored
+            ? "Настройки сохранены в браузере"
+            : "Настройки применены до закрытия приложения");
+      });
+    } catch {
+      setToast(browserStored ? "Настройки сохранены в браузере" : "Настройки применены до закрытия приложения");
+    }
+  };
+
   const captureSnapshot = (): GameSnapshot => ({
     players,
     stage,
@@ -433,7 +589,7 @@ export default function Home() {
 
   const startNormalSpeech = (seat: number, roster: Player[] = players) => {
     const shortSpeech = roster.find((player) => player.seat === seat)?.shortSpeechPending ?? false;
-    const duration = shortSpeech ? 30 : 50;
+    const duration = shortSpeech ? 30 : settings.speechSeconds;
     setPlayers(roster.map((player) => player.seat === seat ? { ...player, shortSpeechPending: false } : player));
     setCurrentSeat(seat);
     setStage("speech");
@@ -769,17 +925,17 @@ export default function Home() {
   const beginFreeSeating = () => {
     remember("начало свободной посадки");
     setStage("freeSeating");
-    startCountdown(40);
-    addLog("Свободная посадка · 40 секунд");
+    startCountdown(settings.freeSeatingSeconds);
+    addLog(`Свободная посадка · ${settings.freeSeatingSeconds} секунд`);
     setToast("Мафия засыпает · свободная посадка");
   };
 
   const enterMorningReady = () => {
     remember(seconds > 0 ? "пропуск свободной посадки" : "переход к утру");
     setRunning(false);
-    setTimerBaseSeconds(50);
-    setTimerTotalSeconds(50);
-    setSeconds(50);
+    setTimerBaseSeconds(settings.speechSeconds);
+    setTimerTotalSeconds(settings.speechSeconds);
+    setSeconds(settings.speechSeconds);
     setStage("morningReady");
     addLog(seconds > 0 ? "Свободная посадка пропущена · утро" : "В городе утро");
     setToast("Речь игрока №1 ждёт команды ведущего");
@@ -1453,6 +1609,104 @@ export default function Home() {
     }
   };
 
+  const settingsDialog = settingsOpen ? (
+    <div className="settings-overlay" onClick={() => setSettingsOpen(false)}>
+      <form
+        id="settings-panel"
+        className="settings-sheet"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="settings-title"
+        onSubmit={(event) => {
+          event.preventDefault();
+          saveSettings();
+        }}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="settings-sheet-head">
+          <div><span>Пульт ведущего</span><strong id="settings-title">Настройки таймеров</strong></div>
+          <button type="button" onClick={() => setSettingsOpen(false)} aria-label="Закрыть настройки">×</button>
+        </div>
+
+        <div className="settings-device-note">
+          <span aria-hidden="true">⌂</span>
+          <div><strong>Сохраняются на этом устройстве</strong><small>В Telegram — в хранилище Mini App, вне Telegram — в браузере.</small></div>
+        </div>
+
+        <fieldset className="settings-group">
+          <legend><span>Обычная речь</span><strong>{speechSettingMode === "custom" ? settingsDraft.speechSeconds || "—" : speechSettingMode} сек</strong></legend>
+          <div className="settings-options" role="radiogroup" aria-label="Длительность обычной речи">
+            {([50, 60] as const).map((duration) => (
+              <button
+                key={duration}
+                type="button"
+                className={speechSettingMode === String(duration) ? "is-selected" : ""}
+                aria-pressed={speechSettingMode === String(duration)}
+                onClick={() => {
+                  setSpeechSettingMode(String(duration) as SpeechSettingMode);
+                  setSettingsDraft((current) => ({ ...current, speechSeconds: String(duration) }));
+                }}
+              >
+                <strong>{duration}</strong><small>секунд</small>
+              </button>
+            ))}
+            <button
+              type="button"
+              className={speechSettingMode === "custom" ? "is-selected" : ""}
+              aria-pressed={speechSettingMode === "custom"}
+              onClick={() => setSpeechSettingMode("custom")}
+            >
+              <strong>Своё</strong><small>число</small>
+            </button>
+          </div>
+          {speechSettingMode === "custom" && (
+            <label className={`custom-duration ${speechDraftValid ? "" : "has-error"}`}>
+              <span>Длительность речи</span>
+              <span><input type="number" inputMode="numeric" min={MIN_TIMER_SECONDS} max={MAX_TIMER_SECONDS} step="1" value={settingsDraft.speechSeconds} onChange={(event) => setSettingsDraft((current) => ({ ...current, speechSeconds: event.target.value }))} /><small>сек</small></span>
+              {!speechDraftValid && <em>Введите число от {MIN_TIMER_SECONDS} до {MAX_TIMER_SECONDS}</em>}
+            </label>
+          )}
+        </fieldset>
+
+        <fieldset className="settings-group">
+          <legend><span>Свободная посадка</span><strong>{freeSeatingSettingMode === "custom" ? settingsDraft.freeSeatingSeconds || "—" : freeSeatingSettingMode} сек</strong></legend>
+          <div className="settings-options two-options" role="radiogroup" aria-label="Длительность свободной посадки">
+            <button
+              type="button"
+              className={freeSeatingSettingMode === "40" ? "is-selected" : ""}
+              aria-pressed={freeSeatingSettingMode === "40"}
+              onClick={() => {
+                setFreeSeatingSettingMode("40");
+                setSettingsDraft((current) => ({ ...current, freeSeatingSeconds: "40" }));
+              }}
+            >
+              <strong>40</strong><small>секунд</small>
+            </button>
+            <button
+              type="button"
+              className={freeSeatingSettingMode === "custom" ? "is-selected" : ""}
+              aria-pressed={freeSeatingSettingMode === "custom"}
+              onClick={() => setFreeSeatingSettingMode("custom")}
+            >
+              <strong>Своё</strong><small>число</small>
+            </button>
+          </div>
+          {freeSeatingSettingMode === "custom" && (
+            <label className={`custom-duration ${freeSeatingDraftValid ? "" : "has-error"}`}>
+              <span>Длительность посадки</span>
+              <span><input type="number" inputMode="numeric" min={MIN_TIMER_SECONDS} max={MAX_TIMER_SECONDS} step="1" value={settingsDraft.freeSeatingSeconds} onChange={(event) => setSettingsDraft((current) => ({ ...current, freeSeatingSeconds: event.target.value }))} /><small>сек</small></span>
+              {!freeSeatingDraftValid && <em>Введите число от {MIN_TIMER_SECONDS} до {MAX_TIMER_SECONDS}</em>}
+            </label>
+          )}
+        </fieldset>
+
+        <button className="settings-save" type="submit" disabled={!settingsDraftValid}>
+          <span><small>Для следующих таймеров</small>Сохранить настройки</span><strong>✓</strong>
+        </button>
+      </form>
+    </div>
+  ) : null;
+
   const isDealStage = stage === "dealChoice" || stage === "appDeal" || stage === "manualDeal" || stage === "dealReady" || stage === "agreement" || stage === "freeSeating" || stage === "morningReady";
   const undoAvailable = isDealStage
     ? stage !== "dealChoice"
@@ -1474,7 +1728,7 @@ export default function Home() {
             : stage === "morningReady"
               ? "Утро"
             : `Игрок ${dealIndex + 1} из 10`;
-    const setupNote = stage === "appDeal" ? `${appRoleDeck.length} ${appRoleDeck.length === 1 ? "карта" : appRoleDeck.length < 5 ? "карты" : "карт"}` : stage === "manualDeal" ? "Ввод с колоды" : stage === "agreement" ? "60 секунд · можно пропустить" : stage === "freeSeating" ? "40 секунд · можно пропустить" : stage === "morningReady" ? "Ожидание ведущего" : "Стандартная десятка";
+    const setupNote = stage === "appDeal" ? `${appRoleDeck.length} ${appRoleDeck.length === 1 ? "карта" : appRoleDeck.length < 5 ? "карты" : "карт"}` : stage === "manualDeal" ? "Ввод с колоды" : stage === "agreement" ? "60 секунд · можно пропустить" : stage === "freeSeating" ? `${timerBaseSeconds} секунд · можно пропустить` : stage === "morningReady" ? "Ожидание ведущего" : "Стандартная десятка";
 
     return (
       <main className="app-shell">
@@ -1485,7 +1739,20 @@ export default function Home() {
                 <span>↶</span>Назад
               </button>
               <div className="game-heading"><span>MAFIA MASTER · НОВАЯ ИГРА</span><strong>{stage === "agreement" || stage === "freeSeating" ? "Первая ночь" : stage === "morningReady" ? "День 1" : "Раздача ролей"}</strong></div>
-              <div className="app-brand">M</div>
+              <div className="setup-header-tools">
+                <button
+                  className={`settings-toggle ${settingsOpen ? "is-active" : ""}`}
+                  type="button"
+                  aria-haspopup="dialog"
+                  aria-expanded={settingsOpen}
+                  aria-controls="settings-panel"
+                  aria-label="Открыть настройки таймеров"
+                  onClick={openSettings}
+                >
+                  <span aria-hidden="true">⚙</span>
+                </button>
+                <div className="app-brand">M</div>
+              </div>
             </div>
             <div className="stage-status deal-status" aria-live="polite">
               <span className="stage-dot" />
@@ -1614,7 +1881,7 @@ export default function Home() {
                   <p>Эту схему видит только ведущий. Цвет и знак роли используются дальше во всех проверках.</p>
                   <RoleMiniMap players={players} title="Все роли" />
                   <div className="ready-composition">{roleOptions.map((role) => <div key={role} className={`role-${roleClassNames[role]}`}><RoleGlyph role={role} /><strong>{roleLimits[role]}</strong><span>{role}</span></div>)}</div>
-                  <div className="first-speaker"><span>Первая ночь</span><strong>Договорка · 60 секунд</strong><small>затем посадка · речь №1 запускает ведущий</small></div>
+                  <div className="first-speaker"><span>Первая ночь</span><strong>Договорка · 60 секунд</strong><small>посадка · {settings.freeSeatingSeconds} сек · речь · {settings.speechSeconds} сек</small></div>
                   <button className="primary-action deal-primary" onClick={startGame}>
                     <span><small>Мафия просыпается, таймер включится сразу</small>Начать договорку · 60</span><strong>→</strong>
                   </button>
@@ -1628,7 +1895,7 @@ export default function Home() {
               <div className="prep-copy">
                 <span>{stage === "agreement" ? "Первая ночь" : "После договорки"}</span>
                 <h1>{stage === "agreement" ? "Договорка" : "Свободная посадка"}</h1>
-                <p>{stage === "agreement" ? "Просыпаются Дон и мафия. У команды 60 секунд на бесшумный план игры." : "Мафия спит. Дон и Шериф обозначаются ведущему, затем игроки принимают удобную посадку на 40 секунд."}</p>
+                <p>{stage === "agreement" ? "Просыпаются Дон и мафия. У команды 60 секунд на бесшумный план игры." : `Мафия спит. Дон и Шериф обозначаются ведущему, затем игроки принимают удобную посадку на ${timerBaseSeconds} секунд.`}</p>
               </div>
               <div className="prep-privacy-note">
                 <span aria-hidden="true">{stage === "agreement" ? "○" : "↠"}</span>
@@ -1644,7 +1911,7 @@ export default function Home() {
               </button>
               <button className="timer-reset prep-reset" onClick={resetTimer}>↺ Сбросить</button>
               <button className="primary-action deal-primary" onClick={stage === "agreement" ? beginFreeSeating : enterMorningReady}>
-                <span><small>{stage === "agreement" ? seconds > 0 ? "Остановить договорку и перейти дальше" : "Таймер посадки запустится автоматически" : seconds > 0 ? "Остановить отсчёт и перейти дальше" : "Речь №1 пока не запустится"}</small>{stage === "agreement" ? seconds > 0 ? "Пропустить · посадка 40" : "Свободная посадка · 40" : seconds > 0 ? "Пропустить · в город утро" : "В город утро"}</span><strong>→</strong>
+                <span><small>{stage === "agreement" ? seconds > 0 ? "Остановить договорку и перейти дальше" : "Таймер посадки запустится автоматически" : seconds > 0 ? "Остановить отсчёт и перейти дальше" : "Речь №1 пока не запустится"}</small>{stage === "agreement" ? seconds > 0 ? `Пропустить · посадка ${settings.freeSeatingSeconds}` : `Свободная посадка · ${settings.freeSeatingSeconds}` : seconds > 0 ? "Пропустить · в город утро" : "В город утро"}</span><strong>→</strong>
               </button>
             </section>
           )}
@@ -1655,13 +1922,14 @@ export default function Home() {
               <span className="deal-eyebrow">В городе утро</span>
               <h1>Речь игрока №1</h1>
               <p>Таймер ещё не запущен. Начните речь только когда стол и ведущий готовы.</p>
-              <div className="speech-rule-card"><span>Обычная речь</span><strong>50 секунд</strong><small>после трёх фолов следующая речь — 30 секунд</small></div>
+              <div className="speech-rule-card"><span>Обычная речь</span><strong>{settings.speechSeconds} секунд</strong><small>после трёх фолов следующая речь — 30 секунд</small></div>
               <button className="primary-action deal-primary" onClick={beginFirstSpeech}>
-                <span><small>Таймер запустится по команде ведущего</small>Начать речь №1 · 50</span><strong>→</strong>
+                <span><small>Таймер запустится по команде ведущего</small>Начать речь №1 · {settings.speechSeconds}</span><strong>→</strong>
               </button>
             </section>
           )}
 
+          {settingsDialog}
         </section>
       </main>
     );
@@ -1774,7 +2042,7 @@ export default function Home() {
     <main className="app-shell">
       <section className={`game-app stage-${stage} ${winnerClass} ${isWarning ? "is-warning" : ""}`} aria-label="Пульт ведущего Mafia Master">
         <header className="game-header">
-          <div className="header-main">
+          <div className="header-main game-header-main">
             <button className="undo-button" onClick={undo} disabled={!undoAvailable} aria-label="Откатить последнее действие назад">
               <span>↶</span>
               Назад
@@ -1807,6 +2075,17 @@ export default function Home() {
                 <span aria-hidden="true">!</span>
                 <strong>Фол</strong>
                 {voteSkips > 0 && <b aria-label={`Будет пропущено голосований: ${voteSkips}`}>{voteSkips}</b>}
+              </button>
+              <button
+                className={`settings-toggle ${settingsOpen ? "is-active" : ""}`}
+                type="button"
+                aria-haspopup="dialog"
+                aria-expanded={settingsOpen}
+                aria-controls="settings-panel"
+                aria-label="Открыть настройки таймеров"
+                onClick={openSettings}
+              >
+                <span aria-hidden="true">⚙</span>
               </button>
             </div>
           </div>
@@ -2074,6 +2353,8 @@ export default function Home() {
             </section>
           </div>
         )}
+
+        {settingsDialog}
 
       </section>
     </main>
