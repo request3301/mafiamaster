@@ -356,7 +356,7 @@ export default function Home() {
 
   useEffect(() => {
     let disposed = false;
-    const useBrowserFallback = () => {
+    const applyBrowserFallback = () => {
       let browserSettings = DEFAULT_HOST_SETTINGS;
       try {
         browserSettings = readLocalHostSettings(window.localStorage).settings;
@@ -368,7 +368,7 @@ export default function Home() {
 
     const deviceStorage = getTelegramDeviceStorage();
     if (!deviceStorage) {
-      useBrowserFallback();
+      applyBrowserFallback();
       return () => {
         disposed = true;
       };
@@ -386,7 +386,7 @@ export default function Home() {
       deviceStorage.getItem(HOST_SETTINGS_STORAGE_KEY, (error, value) => {
         if (disposed) return;
         if (error) {
-          useBrowserFallback();
+          applyBrowserFallback();
           return;
         }
 
@@ -409,7 +409,7 @@ export default function Home() {
         }
       });
     } catch {
-      useBrowserFallback();
+      applyBrowserFallback();
     }
 
     return () => {
