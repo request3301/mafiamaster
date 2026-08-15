@@ -36,7 +36,7 @@ control to undo the latest recorded action without leaving the current game.
   without a limit. The lift vote appears only when the same set ties twice in a
   row, regardless of seat order.
 - Every farewell speech lasts 60 seconds and has controls to add or remove
-  fouls, issue a yellow card, or buy 30 seconds for two fouls. A fourth foul or
+  fouls and yellow cards, or buy 30 seconds for two fouls. A fourth foul or
   second yellow ends only the current farewell; it does not create another
   removal or cancel the completed vote.
 - A Don or Sheriff shot during the current night still receives their
@@ -44,9 +44,9 @@ control to undo the latest recorded action without leaving the current game.
   any other seat, including a previously eliminated player whose role remains
   known to the app. A check can also be skipped explicitly; the skip is written
   to the event log and night summary.
-- The shared penalty panel is available during regular and tie speeches, but
-  not during voting or night. Farewell penalties use the dedicated controls on
-  the farewell screen.
+- The shared penalty panel is available during regular and tie speeches, with
+  controls to add or remove fouls and yellow cards, but not during voting or
+  night. Farewell penalties use the dedicated controls on the farewell screen.
 
 ## Runtime Shape
 

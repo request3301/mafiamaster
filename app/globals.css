@@ -1151,11 +1151,20 @@ button:focus-visible {
   cursor: not-allowed;
 }
 
-.foul-stepper {
+.penalty-stepper-row {
   display: grid;
-  min-height: 48px;
+  min-width: 0;
   grid-column: 1 / -1;
-  grid-template-columns: 48px 1fr 48px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.foul-stepper,
+.yellow-stepper {
+  display: grid;
+  min-width: 0;
+  min-height: 48px;
+  grid-template-columns: 40px minmax(0, 1fr) 40px;
   align-items: stretch;
   overflow: hidden;
   border: 1px solid rgba(235, 222, 183, 0.09);
@@ -1163,7 +1172,8 @@ button:focus-visible {
   background: rgba(255, 255, 255, 0.035);
 }
 
-.foul-stepper > button {
+.foul-stepper > button,
+.yellow-stepper > button {
   display: grid;
   min-height: 48px;
   place-items: center;
@@ -1172,17 +1182,21 @@ button:focus-visible {
   border-radius: 0;
   background: transparent;
   text-align: center;
+  cursor: pointer;
 }
 
-.foul-stepper > button:first-child {
+.foul-stepper > button:first-child,
+.yellow-stepper > button:first-child {
   border-right: 1px solid rgba(235, 222, 183, 0.07);
 }
 
-.foul-stepper > button:last-child {
+.foul-stepper > button:last-child,
+.yellow-stepper > button:last-child {
   border-left: 1px solid rgba(235, 222, 183, 0.07);
 }
 
-.foul-stepper > button > span {
+.foul-stepper > button > span,
+.yellow-stepper > button > span {
   width: auto;
   height: auto;
   color: #e5edbc;
@@ -1190,33 +1204,57 @@ button:focus-visible {
   font-size: 20px;
 }
 
-.foul-stepper > div {
+.foul-stepper > div,
+.yellow-stepper > div {
   display: grid;
+  min-width: 0;
   place-content: center;
   justify-items: center;
   gap: 1px;
 }
 
-.foul-stepper small {
+.foul-stepper small,
+.yellow-stepper small {
+  max-width: 100%;
+  overflow: hidden;
   color: #777d6b;
   font-size: 7px;
   font-weight: 800;
+  text-overflow: ellipsis;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
-.foul-stepper strong {
+.foul-stepper strong,
+.yellow-stepper strong {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 13px;
 }
 
-.quick-actions .yellow-action > span {
-  color: #2e270f;
-  background: #e3b934;
-  transform: skew(-6deg);
+.yellow-stepper {
+  border-color: rgba(227, 185, 52, 0.22);
+  background: rgba(227, 185, 52, 0.07);
+}
+
+.yellow-stepper > button:first-child {
+  border-right-color: rgba(227, 185, 52, 0.14);
+}
+
+.yellow-stepper > button:last-child {
+  border-left-color: rgba(227, 185, 52, 0.14);
+}
+
+.yellow-stepper > button > span,
+.yellow-stepper strong {
+  color: #e8c44f;
+}
+
+.yellow-stepper small {
+  color: #a99451;
 }
 
 .quick-actions .buy-time-action {
-  grid-column: 1 / -1;
+  grid-column: auto;
 }
 
 .penalty-overlay {
@@ -1357,11 +1395,12 @@ button:focus-visible {
   gap: 7px;
 }
 
-.penalty-actions .foul-stepper {
+.penalty-actions .penalty-stepper-row {
   grid-column: 1 / -1;
 }
 
 .penalty-actions .foul-stepper button,
+.penalty-actions .yellow-stepper button,
 .penalty-actions > button {
   cursor: pointer;
 }
@@ -1369,36 +1408,6 @@ button:focus-visible {
 .penalty-actions button:disabled {
   opacity: 0.34;
   cursor: not-allowed;
-}
-
-.penalty-actions > .yellow-action {
-  display: grid;
-  min-height: 44px;
-  grid-column: 1 / -1;
-  grid-template-columns: 28px 1fr;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 9px;
-  border: 1px solid rgba(227, 185, 52, 0.18);
-  border-radius: 13px;
-  color: #e9d58f;
-  background: rgba(227, 185, 52, 0.07);
-  text-align: left;
-}
-
-.penalty-actions > .yellow-action > span {
-  display: grid;
-  width: 25px;
-  height: 25px;
-  place-items: center;
-  transform: skew(-6deg);
-  border-radius: 6px;
-  color: #2e270f;
-  background: #e3b934;
-}
-
-.penalty-actions > .yellow-action strong {
-  font-size: 9px;
 }
 
 .penalty-rule {
@@ -1598,7 +1607,11 @@ button:focus-visible {
   gap: 6px;
 }
 
-.farewell-penalties .foul-stepper {
+.farewell-penalties .penalty-stepper-row {
+  grid-column: 1 / -1;
+}
+
+.farewell-penalties > .buy-time-action {
   grid-column: 1 / -1;
 }
 
@@ -1627,12 +1640,6 @@ button:focus-visible {
   background: rgba(216, 233, 142, 0.11);
   font-size: 10px;
   font-weight: 900;
-}
-
-.farewell-penalties > .yellow-action > span {
-  color: #2e270f;
-  background: #e3b934;
-  transform: skew(-6deg);
 }
 
 .farewell-penalties > button strong {
@@ -3144,17 +3151,18 @@ button:focus-visible {
   }
 
   .quick-actions {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(2, 1fr);
     gap: 5px;
   }
 
-  .foul-stepper {
+  .foul-stepper,
+  .yellow-stepper {
     min-height: 44px;
-    grid-column: 1 / -1;
-    grid-template-columns: 44px 1fr 44px;
+    grid-template-columns: 38px minmax(0, 1fr) 38px;
   }
 
-  .foul-stepper > button {
+  .foul-stepper > button,
+  .yellow-stepper > button {
     min-height: 44px;
   }
 
@@ -3363,11 +3371,9 @@ button:focus-visible {
   }
 
   .penalty-actions .foul-stepper,
-  .penalty-actions .foul-stepper > button {
-    min-height: 40px;
-  }
-
-  .penalty-actions > .yellow-action {
+  .penalty-actions .foul-stepper > button,
+  .penalty-actions .yellow-stepper,
+  .penalty-actions .yellow-stepper > button {
     min-height: 40px;
   }
 
@@ -3523,6 +3529,8 @@ button:focus-visible {
 
   .farewell-penalties .foul-stepper,
   .farewell-penalties .foul-stepper > button,
+  .farewell-penalties .yellow-stepper,
+  .farewell-penalties .yellow-stepper > button,
   .farewell-penalties > button {
     min-height: 38px;
   }
