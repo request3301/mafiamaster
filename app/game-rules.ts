@@ -87,3 +87,11 @@ export function shouldEndFarewellForPenalty(fouls: number, yellowCards: number) 
 export function nextNightStageAfterSkip(checker: "don" | "sheriff", sheriffAvailable: boolean) {
   return checker === "don" && sheriffAvailable ? "nightSheriff" as const : "nightSummary" as const;
 }
+
+export function shouldOfferBestMove(
+  round: number,
+  shotTarget: number | null,
+  removedBeforeNight: number,
+) {
+  return round === 1 && shotTarget !== null && removedBeforeNight <= 1;
+}

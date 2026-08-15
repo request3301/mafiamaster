@@ -9,6 +9,7 @@ import {
   orderNominationPairsBySpeech,
   resolveTieOutcome,
   sameSeatSet,
+  shouldOfferBestMove,
   shouldEndFarewellForPenalty,
   updateNominationForSpeaker,
 } from "../app/game-rules.ts";
@@ -59,6 +60,14 @@ test("skipping checks follows the night order", () => {
   assert.equal(nextNightStageAfterSkip("don", true), "nightSheriff");
   assert.equal(nextNightStageAfterSkip("don", false), "nightSummary");
   assert.equal(nextNightStageAfterSkip("sheriff", true), "nightSummary");
+});
+
+test("the first-night victim records a best move only after zero or one removals", () => {
+  assert.equal(shouldOfferBestMove(1, 6, 0), true);
+  assert.equal(shouldOfferBestMove(1, 6, 1), true);
+  assert.equal(shouldOfferBestMove(1, 6, 2), false);
+  assert.equal(shouldOfferBestMove(1, null, 0), false);
+  assert.equal(shouldOfferBestMove(2, 6, 0), false);
 });
 
 test("farewell penalties end the speech only at a removal threshold", () => {
