@@ -18,6 +18,7 @@ import {
   HOST_SETTINGS_STORAGE_KEY,
   normalizeTimerSeconds,
   parseHostSettings,
+  readLocalHostSettings,
   type HostSettings,
 } from "./host-settings";
 
@@ -358,7 +359,7 @@ export default function Home() {
     const useBrowserFallback = () => {
       let browserSettings = DEFAULT_HOST_SETTINGS;
       try {
-        browserSettings = parseHostSettings(window.localStorage.getItem(HOST_SETTINGS_STORAGE_KEY));
+        browserSettings = readLocalHostSettings(window.localStorage).settings;
       } catch {}
       if (disposed) return;
       setSettings(browserSettings);
@@ -376,8 +377,9 @@ export default function Home() {
     let localSerialized: string | null = null;
     let localSettings = DEFAULT_HOST_SETTINGS;
     try {
-      localSerialized = window.localStorage.getItem(HOST_SETTINGS_STORAGE_KEY);
-      localSettings = parseHostSettings(localSerialized);
+      const localStorageSettings = readLocalHostSettings(window.localStorage);
+      localSerialized = localStorageSettings.serialized;
+      localSettings = localStorageSettings.settings;
     } catch {}
 
     try {
