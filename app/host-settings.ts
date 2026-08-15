@@ -9,13 +9,11 @@ export const DEFAULT_HOST_SETTINGS: HostSettings = {
 };
 
 export const HOST_SETTINGS_STORAGE_KEY = "mafia-master:host-settings:v1";
-export const MIN_TIMER_SECONDS = 10;
-export const MAX_TIMER_SECONDS = 600;
 
 export function normalizeTimerSeconds(value: unknown, fallback: number) {
   const numericValue = typeof value === "number" ? value : Number(value);
-  if (!Number.isFinite(numericValue)) return fallback;
-  return Math.min(MAX_TIMER_SECONDS, Math.max(MIN_TIMER_SECONDS, Math.round(numericValue)));
+  if (!Number.isFinite(numericValue) || numericValue <= 0) return fallback;
+  return Math.max(1, Math.round(numericValue));
 }
 
 export function parseHostSettings(serialized: string | null): HostSettings {

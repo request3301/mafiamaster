@@ -16,8 +16,6 @@ import { restoreNumberedCard, takeNumberedCard } from "./role-deal";
 import {
   DEFAULT_HOST_SETTINGS,
   HOST_SETTINGS_STORAGE_KEY,
-  MAX_TIMER_SECONDS,
-  MIN_TIMER_SECONDS,
   normalizeTimerSeconds,
   parseHostSettings,
   type HostSettings,
@@ -350,44 +348,66 @@ export default function Home() {
   });
   const [speechSettingMode, setSpeechSettingMode] = useState<SpeechSettingMode>("50");
   const [freeSeatingSettingMode, setFreeSeatingSettingMode] = useState<FreeSeatingSettingMode>("40");
+  const [settingsReady, setSettingsReady] = useState(false);
   const [, setToast] = useState<string | null>(null);
   const deadlineRef = useRef(0);
   const manualAssignLockRef = useRef(false);
-  const settingsChangedRef = useRef(false);
 
   useEffect(() => {
+    let disposed = false;
+    const useBrowserFallback = () => {
+      let browserSettings = DEFAULT_HOST_SETTINGS;
+      try {
+        browserSettings = parseHostSettings(window.localStorage.getItem(HOST_SETTINGS_STORAGE_KEY));
+      } catch {}
+      if (disposed) return;
+      setSettings(browserSettings);
+      setSettingsReady(true);
+    };
+
+    const deviceStorage = getTelegramDeviceStorage();
+    if (!deviceStorage) {
+      useBrowserFallback();
+      return () => {
+        disposed = true;
+      };
+    }
+
     let localSerialized: string | null = null;
     let localSettings = DEFAULT_HOST_SETTINGS;
     try {
       localSerialized = window.localStorage.getItem(HOST_SETTINGS_STORAGE_KEY);
       localSettings = parseHostSettings(localSerialized);
-      setSettings(localSettings);
-    } catch {
-      // Some embedded browsers can deny storage access; defaults still keep the app usable.
-    }
-
-    const deviceStorage = getTelegramDeviceStorage();
-    if (!deviceStorage) return;
-    let disposed = false;
+    } catch {}
 
     try {
       deviceStorage.getItem(HOST_SETTINGS_STORAGE_KEY, (error, value) => {
-        if (disposed || settingsChangedRef.current) return;
-        if (!error && value) {
-          const deviceSettings = parseHostSettings(value);
-          setSettings(deviceSettings);
+        if (disposed) return;
+        if (error) {
+          useBrowserFallback();
+          return;
+        }
+
+        const storedSettings = value
+          ? parseHostSettings(value)
+          : localSerialized
+            ? localSettings
+            : DEFAULT_HOST_SETTINGS;
+        setSettings(storedSettings);
+        setSettingsReady(true);
+
+        if (value) {
           try {
-            window.localStorage.setItem(HOST_SETTINGS_STORAGE_KEY, JSON.stringify(deviceSettings));
-          } catch {
-            // DeviceStorage remains the source of truth inside Telegram.
-          }
-        } else if (!error && localSerialized) {
-          // Move settings saved by earlier versions into Telegram's persistent storage.
-          deviceStorage.setItem(HOST_SETTINGS_STORAGE_KEY, JSON.stringify(localSettings));
+            window.localStorage.setItem(HOST_SETTINGS_STORAGE_KEY, JSON.stringify(storedSettings));
+          } catch {}
+        } else if (localSerialized) {
+          try {
+            deviceStorage.setItem(HOST_SETTINGS_STORAGE_KEY, JSON.stringify(storedSettings));
+          } catch {}
         }
       });
     } catch {
-      // Older or restricted Telegram clients continue with the browser fallback.
+      useBrowserFallback();
     }
 
     return () => {
@@ -480,18 +500,17 @@ export default function Home() {
   const speechDraftValid = speechSettingMode !== "custom" || (
     settingsDraft.speechSeconds.trim() !== ""
     && Number.isFinite(speechDraftNumber)
-    && speechDraftNumber >= MIN_TIMER_SECONDS
-    && speechDraftNumber <= MAX_TIMER_SECONDS
+    && speechDraftNumber > 0
   );
   const freeSeatingDraftValid = freeSeatingSettingMode !== "custom" || (
     settingsDraft.freeSeatingSeconds.trim() !== ""
     && Number.isFinite(freeSeatingDraftNumber)
-    && freeSeatingDraftNumber >= MIN_TIMER_SECONDS
-    && freeSeatingDraftNumber <= MAX_TIMER_SECONDS
+    && freeSeatingDraftNumber > 0
   );
   const settingsDraftValid = speechDraftValid && freeSeatingDraftValid;
 
   const openSettings = () => {
+    if (!settingsReady) return;
     setSettingsDraft({
       speechSeconds: String(settings.speechSeconds),
       freeSeatingSeconds: String(settings.freeSeatingSeconds),
@@ -503,7 +522,7 @@ export default function Home() {
   };
 
   const saveSettings = () => {
-    if (!settingsDraftValid) return;
+    if (!settingsReady || !settingsDraftValid) return;
     const nextSettings: HostSettings = {
       speechSeconds: speechSettingMode === "50"
         ? 50
@@ -515,7 +534,6 @@ export default function Home() {
         : normalizeTimerSeconds(settingsDraft.freeSeatingSeconds, settings.freeSeatingSeconds),
     };
 
-    settingsChangedRef.current = true;
     setSettings(nextSettings);
     setSettingsOpen(false);
     const serialized = JSON.stringify(nextSettings);
@@ -1662,8 +1680,8 @@ export default function Home() {
           {speechSettingMode === "custom" && (
             <label className={`custom-duration ${speechDraftValid ? "" : "has-error"}`}>
               <span>Длительность речи</span>
-              <span><input type="number" inputMode="numeric" min={MIN_TIMER_SECONDS} max={MAX_TIMER_SECONDS} step="1" value={settingsDraft.speechSeconds} onChange={(event) => setSettingsDraft((current) => ({ ...current, speechSeconds: event.target.value }))} /><small>сек</small></span>
-              {!speechDraftValid && <em>Введите число от {MIN_TIMER_SECONDS} до {MAX_TIMER_SECONDS}</em>}
+              <span><input type="number" inputMode="numeric" step="any" value={settingsDraft.speechSeconds} onChange={(event) => setSettingsDraft((current) => ({ ...current, speechSeconds: event.target.value }))} /><small>сек</small></span>
+              {!speechDraftValid && <em>Введите положительное число секунд</em>}
             </label>
           )}
         </fieldset>
@@ -1694,8 +1712,8 @@ export default function Home() {
           {freeSeatingSettingMode === "custom" && (
             <label className={`custom-duration ${freeSeatingDraftValid ? "" : "has-error"}`}>
               <span>Длительность посадки</span>
-              <span><input type="number" inputMode="numeric" min={MIN_TIMER_SECONDS} max={MAX_TIMER_SECONDS} step="1" value={settingsDraft.freeSeatingSeconds} onChange={(event) => setSettingsDraft((current) => ({ ...current, freeSeatingSeconds: event.target.value }))} /><small>сек</small></span>
-              {!freeSeatingDraftValid && <em>Введите число от {MIN_TIMER_SECONDS} до {MAX_TIMER_SECONDS}</em>}
+              <span><input type="number" inputMode="numeric" step="any" value={settingsDraft.freeSeatingSeconds} onChange={(event) => setSettingsDraft((current) => ({ ...current, freeSeatingSeconds: event.target.value }))} /><small>сек</small></span>
+              {!freeSeatingDraftValid && <em>Введите положительное число секунд</em>}
             </label>
           )}
         </fieldset>
@@ -1704,6 +1722,11 @@ export default function Home() {
           <span><small>Для следующих таймеров</small>Сохранить настройки</span><strong>✓</strong>
         </button>
       </form>
+    </div>
+  ) : null;
+  const settingsLoadingOverlay = !settingsReady ? (
+    <div className="settings-loading-overlay" role="status" aria-live="polite">
+      <span>Загрузка настроек…</span>
     </div>
   ) : null;
 
@@ -1746,6 +1769,7 @@ export default function Home() {
                   aria-haspopup="dialog"
                   aria-expanded={settingsOpen}
                   aria-controls="settings-panel"
+                  disabled={!settingsReady}
                   aria-label="Открыть настройки таймеров"
                   onClick={openSettings}
                 >
@@ -1930,6 +1954,7 @@ export default function Home() {
           )}
 
           {settingsDialog}
+          {settingsLoadingOverlay}
         </section>
       </main>
     );
@@ -2082,6 +2107,7 @@ export default function Home() {
                 aria-haspopup="dialog"
                 aria-expanded={settingsOpen}
                 aria-controls="settings-panel"
+                disabled={!settingsReady}
                 aria-label="Открыть настройки таймеров"
                 onClick={openSettings}
               >
@@ -2355,6 +2381,7 @@ export default function Home() {
         )}
 
         {settingsDialog}
+        {settingsLoadingOverlay}
 
       </section>
     </main>

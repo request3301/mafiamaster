@@ -2,8 +2,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   DEFAULT_HOST_SETTINGS,
-  MAX_TIMER_SECONDS,
-  MIN_TIMER_SECONDS,
   normalizeTimerSeconds,
   parseHostSettings,
 } from "../app/host-settings.ts";
@@ -23,9 +21,9 @@ test("restores valid device-local timer settings", () => {
   });
 });
 
-test("normalizes custom durations into a safe whole-second range", () => {
+test("normalizes arbitrary positive custom durations to whole seconds", () => {
   assert.equal(normalizeTimerSeconds("75.4", 50), 75);
-  assert.equal(normalizeTimerSeconds(1, 50), MIN_TIMER_SECONDS);
-  assert.equal(normalizeTimerSeconds(5000, 40), MAX_TIMER_SECONDS);
+  assert.equal(normalizeTimerSeconds(1, 50), 1);
+  assert.equal(normalizeTimerSeconds(5000, 40), 5000);
   assert.equal(normalizeTimerSeconds("invalid", 40), 40);
 });
