@@ -44,9 +44,9 @@ control to undo the latest recorded action without leaving the current game.
   any other seat, including a previously eliminated player whose role remains
   known to the app. A check can also be skipped explicitly; the skip is written
   to the event log and night summary.
-- The shared penalty panel is available during regular and tie speeches, but
-  not during voting or night. Farewell penalties use the dedicated controls on
-  the farewell screen.
+- The shared penalty panel is available during regular and tie speeches, with
+  controls to add or remove fouls and yellow cards, but not during voting or
+  night. Farewell penalties use the dedicated controls on the farewell screen.
 
 ## Runtime Shape
 
