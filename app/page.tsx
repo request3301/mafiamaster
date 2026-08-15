@@ -12,6 +12,7 @@ import {
   type NominationPair,
   type Winner,
 } from "./game-rules";
+import { restoreNumberedCard, takeNumberedCard } from "./role-deal";
 
 type Stage =
   | "dealChoice"
@@ -79,13 +80,20 @@ type NightRecord =
   | { type: "don"; target: number | null; result: "Шериф" | "Не шериф" | "Пропуск"; checkedEmptySeat: boolean }
   | { type: "sheriff"; target: number | null; result: "Мафия" | "Мирный" | "Пропуск"; checkedEmptySeat: boolean };
 
+type AppDealHistoryEntry = {
+  playerIndex: number;
+  cardIndex: number;
+  role: Role;
+};
+
 type GameSnapshot = {
   players: Player[];
   stage: Stage;
   dealMethod: DealMethod;
   dealIndex: number;
-  appViewedCount: number;
-  roleRevealed: boolean;
+  appRoleDeck: Role[];
+  selectedAppCardIndex: number | null;
+  appDealHistory: AppDealHistoryEntry[];
   masterSummaryVisible: boolean;
   day: number;
   round: number;
@@ -276,8 +284,9 @@ export default function Home() {
   const [stage, setStage] = useState<Stage>("dealChoice");
   const [dealMethod, setDealMethod] = useState<DealMethod>(null);
   const [dealIndex, setDealIndex] = useState(0);
-  const [appViewedCount, setAppViewedCount] = useState(0);
-  const [roleRevealed, setRoleRevealed] = useState(false);
+  const [appRoleDeck, setAppRoleDeck] = useState<Role[]>([]);
+  const [selectedAppCardIndex, setSelectedAppCardIndex] = useState<number | null>(null);
+  const [appDealHistory, setAppDealHistory] = useState<AppDealHistoryEntry[]>([]);
   const [masterSummaryVisible, setMasterSummaryVisible] = useState(false);
   const [rolesVisible, setRolesVisible] = useState(false);
   const [day, setDay] = useState(1);
@@ -377,14 +386,16 @@ export default function Home() {
     counts[role] = players.filter((player) => player.role === role).length;
     return counts;
   }, { Мирный: 0, Мафия: 0, Дон: 0, Шериф: 0 });
+  const selectedAppRole = selectedAppCardIndex === null ? null : appRoleDeck[selectedAppCardIndex] ?? null;
 
   const captureSnapshot = (): GameSnapshot => ({
     players,
     stage,
     dealMethod,
     dealIndex,
-    appViewedCount,
-    roleRevealed,
+    appRoleDeck,
+    selectedAppCardIndex,
+    appDealHistory,
     masterSummaryVisible,
     day,
     round,
@@ -475,8 +486,9 @@ export default function Home() {
     setStage(snapshot.stage);
     setDealMethod(snapshot.dealMethod);
     setDealIndex(snapshot.dealIndex);
-    setAppViewedCount(snapshot.appViewedCount);
-    setRoleRevealed(snapshot.roleRevealed);
+    setAppRoleDeck(snapshot.appRoleDeck);
+    setSelectedAppCardIndex(snapshot.selectedAppCardIndex);
+    setAppDealHistory(snapshot.appDealHistory);
     setMasterSummaryVisible(snapshot.masterSummaryVisible);
     setDay(snapshot.day);
     setRound(snapshot.round);
@@ -510,16 +522,19 @@ export default function Home() {
   const undo = () => {
     if (stage === "gameOver") setRolesVisible(false);
     if (stage === "appDeal") {
-      if (roleRevealed) {
-        setRoleRevealed(false);
-        setToast("Роль снова скрыта");
-      } else if (dealIndex > 0) {
-        setDealIndex((current) => current - 1);
-        setToast(`Вернулись к передаче телефона игроку №${dealIndex}`);
-      } else if (appViewedCount > 0) {
-        setToast("Раздача уже началась · просмотренные роли нельзя перемешать незаметно");
+      if (selectedAppCardIndex !== null) {
+        setSelectedAppCardIndex(null);
+        setToast("Выбор карты отменён");
+      } else if (appDealHistory.length > 0) {
+        const last = appDealHistory[appDealHistory.length - 1];
+        setPlayers((current) => current.map((player, index) => index === last.playerIndex ? { ...player, role: null } : player));
+        setAppRoleDeck((current) => restoreNumberedCard(current, last.cardIndex + 1, last.role));
+        setAppDealHistory((current) => current.slice(0, -1));
+        setDealIndex(last.playerIndex);
+        setToast(`Раздача карты игроку №${last.playerIndex + 1} отменена`);
       } else {
-        setPlayers(initialPlayers);
+        setPlayers(initialPlayers.map((player) => ({ ...player })));
+        setAppRoleDeck([]);
         setDealMethod(null);
         setStage("dealChoice");
       }
@@ -540,14 +555,17 @@ export default function Home() {
     }
     if (stage === "dealReady") {
       if (dealMethod === "app") {
-        if (masterSummaryVisible) {
+        const last = appDealHistory[appDealHistory.length - 1];
+        if (last) {
+          setPlayers((current) => current.map((player, index) => index === last.playerIndex ? { ...player, role: null } : player));
+          setAppRoleDeck((current) => restoreNumberedCard(current, last.cardIndex + 1, last.role));
+          setAppDealHistory((current) => current.slice(0, -1));
+          setDealIndex(last.playerIndex);
+          setSelectedAppCardIndex(null);
           setMasterSummaryVisible(false);
-          setToast("Карта ролей снова скрыта");
-          return;
+          setStage("appDeal");
+          setToast(`Раздача карты игроку №${last.playerIndex + 1} отменена`);
         }
-        setStage("appDeal");
-        setDealIndex(9);
-        setRoleRevealed(false);
       } else {
         setPlayers((current) => current.map((player, index) => index === 9 ? { ...player, role: null } : player));
         setDealIndex(9);
@@ -614,8 +632,9 @@ export default function Home() {
     setStage("dealChoice");
     setDealMethod(null);
     setDealIndex(0);
-    setAppViewedCount(0);
-    setRoleRevealed(false);
+    setAppRoleDeck([]);
+    setSelectedAppCardIndex(null);
+    setAppDealHistory([]);
     setMasterSummaryVisible(false);
     setRolesVisible(false);
     setDay(1);
@@ -646,42 +665,45 @@ export default function Home() {
   };
 
   const beginAppDeal = () => {
-    const roles = shuffleRoles();
-    setPlayers(initialPlayers.map((player, index) => ({ ...player, role: roles[index] })));
+    setPlayers(initialPlayers.map((player) => ({ ...player })));
     setDealMethod("app");
     setDealIndex(0);
-    setAppViewedCount(0);
-    setRoleRevealed(false);
+    setAppRoleDeck(shuffleRoles());
+    setSelectedAppCardIndex(null);
+    setAppDealHistory([]);
     setMasterSummaryVisible(false);
     setStage("appDeal");
-    setToast("Передайте телефон игроку №1");
+    setToast("Игрок №1 показывает номер карты ведущему");
   };
 
   const beginManualDeal = () => {
     setPlayers(initialPlayers.map((player) => ({ ...player })));
     setDealMethod("cards");
     setDealIndex(0);
-    setAppViewedCount(0);
-    setRoleRevealed(false);
+    setAppRoleDeck([]);
+    setSelectedAppCardIndex(null);
+    setAppDealHistory([]);
     setMasterSummaryVisible(true);
     setStage("manualDeal");
     setToast("Введите роль игрока №1");
   };
 
   const advanceAppDeal = () => {
-    if (!roleRevealed) {
-      setRoleRevealed(true);
-      setAppViewedCount((current) => Math.max(current, dealIndex + 1));
-      return;
-    }
-    setRoleRevealed(false);
+    if (selectedAppCardIndex === null) return;
+    const draw = takeNumberedCard(appRoleDeck, selectedAppCardIndex + 1);
+    if (!draw) return;
+
+    setPlayers((current) => current.map((player, index) => index === dealIndex ? { ...player, role: draw.card } : player));
+    setAppRoleDeck(draw.remaining);
+    setAppDealHistory((current) => [...current, { playerIndex: dealIndex, cardIndex: draw.index, role: draw.card }]);
+    setSelectedAppCardIndex(null);
     if (dealIndex < players.length - 1) {
       setDealIndex((current) => current + 1);
-      setToast(`Роль скрыта · передайте телефон игроку №${dealIndex + 2}`);
+      setToast(`Карта выдана · просыпается игрок №${dealIndex + 2}`);
     } else {
-      setMasterSummaryVisible(false);
+      setMasterSummaryVisible(true);
       setStage("dealReady");
-      setToast("Все 10 ролей розданы · верните телефон ведущему");
+      setToast("Все 10 ролей розданы");
     }
   };
 
@@ -1429,7 +1451,6 @@ export default function Home() {
 
   if (isDealStage) {
     const dealPlayer = players[dealIndex] ?? players[0];
-    const dealRole = dealPlayer.role;
     const setupLabel = stage === "dealChoice"
       ? "Подготовка партии"
       : stage === "dealReady"
@@ -1441,7 +1462,7 @@ export default function Home() {
             : stage === "morningReady"
               ? "Утро"
             : `Игрок ${dealIndex + 1} из 10`;
-    const setupNote = stage === "appDeal" ? "Приватный просмотр" : stage === "manualDeal" ? "Ввод с колоды" : stage === "agreement" ? "60 секунд · можно пропустить" : stage === "freeSeating" ? "40 секунд · можно пропустить" : stage === "morningReady" ? "Ожидание ведущего" : "Стандартная десятка";
+    const setupNote = stage === "appDeal" ? `${appRoleDeck.length} ${appRoleDeck.length === 1 ? "карта" : appRoleDeck.length < 5 ? "карты" : "карт"}` : stage === "manualDeal" ? "Ввод с колоды" : stage === "agreement" ? "60 секунд · можно пропустить" : stage === "freeSeating" ? "40 секунд · можно пропустить" : stage === "morningReady" ? "Ожидание ведущего" : "Стандартная десятка";
 
     return (
       <main className="app-shell">
@@ -1474,7 +1495,7 @@ export default function Home() {
               <div className="deal-methods">
                 <button onClick={beginAppDeal}>
                   <span className="method-icon">▣</span>
-                  <span><small>Без колоды</small><strong>Через приложение</strong><em>Роли перемешаются, игроки посмотрят их по очереди</em></span>
+                  <span><small>Без колоды</small><strong>Через приложение</strong><em>Игрок называет номер, ведущий показывает выпавшую роль</em></span>
                   <b>→</b>
                 </button>
                 <button onClick={beginManualDeal}>
@@ -1489,24 +1510,45 @@ export default function Home() {
 
           {stage === "appDeal" && (
             <section className="deal-panel app-deal">
-              <div className="deal-progress"><span style={{ width: `${((dealIndex + (roleRevealed ? 1 : 0)) / 10) * 100}%` }} /></div>
-              <div className="handoff-copy">
-                <span>{roleRevealed ? "Только для вас" : "Передайте телефон"}</span>
-                <h2>Игрок №{dealPlayer.seat}</h2>
-                <p>{roleRevealed ? "Запомните роль и никому её не показывайте" : "Остальные игроки закрывают глаза и не смотрят на экран"}</p>
+              <div className="deal-progress"><span style={{ width: `${(dealIndex / 10) * 100}%` }} /></div>
+              <div className="app-deal-copy">
+                <span>Игрок №{dealPlayer.seat} показывает номер</span>
+                <h2>Выберите карту</h2>
+                <p>После каждого игрока оставшиеся карты снова нумеруются от 1 до N.</p>
               </div>
-              <div className={`private-role-card ${roleRevealed && dealRole ? `is-revealed role-${roleClassNames[dealRole]}` : ""}`}>
-                <div className="card-corner">M</div>
-                {roleRevealed && dealRole ? (
-                  <div className="revealed-role"><span>Ваша роль</span><RoleGlyph role={dealRole} className="card-role-glyph" /><strong>{dealRole}</strong><p>{roleDescriptions[dealRole]}</p></div>
-                ) : (
-                  <div className="hidden-role"><span>?</span><strong>Роль скрыта</strong><p>Нажмите кнопку, когда экран видит только игрок №{dealPlayer.seat}</p></div>
-                )}
-                <div className="card-corner bottom">M</div>
+              <div className="app-card-grid" aria-label="Оставшиеся карты">
+                {appRoleDeck.map((role, index) => (
+                  <button
+                    type="button"
+                    key={`${appDealHistory.length}-${index}-${role}`}
+                    className={`app-role-tile role-${roleClassNames[role]}`}
+                    aria-label={`Карта №${index + 1}, роль ${role}`}
+                    onClick={() => setSelectedAppCardIndex(index)}
+                  >
+                    {index + 1}
+                  </button>
+                ))}
               </div>
-              <button className="primary-action deal-primary" onClick={advanceAppDeal}>
-                <span><small>{roleRevealed ? "После нажатия роль сразу исчезнет" : "Убедитесь, что никто не подсматривает"}</small>{roleRevealed ? dealIndex < 9 ? `Запомнил · передать №${dealIndex + 2}` : "Запомнил · скрыть роль" : "Показать мою роль"}</span>
-                <strong>{roleRevealed ? "→" : "⌁"}</strong>
+              <div className="app-deal-legend" aria-label="Цвета ролей">
+                {roleOptions.map((role) => <span key={role} className={`role-${roleClassNames[role]}`}><i />{role}</span>)}
+              </div>
+            </section>
+          )}
+
+          {stage === "appDeal" && selectedAppRole && selectedAppCardIndex !== null && (
+            <section className={`app-role-reveal role-${roleClassNames[selectedAppRole]}`} aria-label={`Роль игрока №${dealPlayer.seat}: ${selectedAppRole}`}>
+              <header>
+                <button type="button" onClick={() => setSelectedAppCardIndex(null)}>Назад</button>
+                <strong>Игрок №{dealPlayer.seat} · карта №{selectedAppCardIndex + 1}</strong>
+                <span />
+              </header>
+              <div className="app-role-reveal-copy">
+                <small>Ваша роль</small>
+                <h2>{selectedAppRole}</h2>
+                <p>{roleDescriptions[selectedAppRole]}</p>
+              </div>
+              <button type="button" className="app-role-next" onClick={advanceAppDeal}>
+                {dealIndex < players.length - 1 ? `Перейти к игроку №${dealIndex + 2}` : "Завершить раздачу"}
               </button>
             </section>
           )}

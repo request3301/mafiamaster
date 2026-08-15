@@ -11,10 +11,10 @@
   --app-warm: #dfad63;
   --timer-accent: #d8e98e;
   --vote-locked: #7895a4;
-  --role-citizen: #dc4f5d;
-  --role-mafia: #0a0b0d;
-  --role-don: #7a49bd;
-  --role-sheriff: #f0c84b;
+  --role-citizen: #824a53;
+  --role-mafia: #212428;
+  --role-don: #654b72;
+  --role-sheriff: #8a7340;
 }
 
 * {
@@ -2301,6 +2301,199 @@ button:focus-visible {
   transition: width 0.2s ease;
 }
 
+.app-deal {
+  align-content: start;
+}
+
+.app-deal-copy {
+  padding-top: 3px;
+  text-align: center;
+}
+
+.app-deal-copy > span {
+  color: var(--app-accent);
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.app-deal-copy h2 {
+  margin: 6px 0 4px;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 33px;
+  font-weight: 500;
+  letter-spacing: -0.035em;
+}
+
+.app-deal-copy p {
+  max-width: 330px;
+  margin: 0 auto;
+  color: #929884;
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.app-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.app-role-tile {
+  --tile-color: #30352b;
+  --tile-ink: #f4f0e5;
+  display: grid;
+  min-width: 0;
+  min-height: 72px;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 15px;
+  color: var(--tile-ink);
+  background:
+    radial-gradient(circle at 50% 12%, rgba(255, 255, 255, 0.09), transparent 48%),
+    var(--tile-color);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.1), 0 8px 18px rgba(0, 0, 0, 0.2);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 29px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.14s ease, filter 0.14s ease;
+}
+
+.app-role-tile.role-citizen { --tile-color: #824a53; --tile-ink: #f4dfdf; }
+.app-role-tile.role-mafia { --tile-color: #212428; --tile-ink: #e2e3df; }
+.app-role-tile.role-don { --tile-color: #654b72; --tile-ink: #ebdff0; }
+.app-role-tile.role-sheriff { --tile-color: #8a7340; --tile-ink: #f1e6c8; }
+
+.app-role-tile:active {
+  transform: scale(0.98);
+  filter: brightness(1.08);
+}
+
+.app-deal-legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 5px 9px;
+  color: #858b77;
+  font-size: 7px;
+}
+
+.app-deal-legend span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.app-deal-legend i {
+  display: block;
+  width: 8px;
+  height: 8px;
+  border-radius: 3px;
+  background: var(--legend-color);
+}
+
+.app-deal-legend .role-citizen { --legend-color: #824a53; }
+.app-deal-legend .role-mafia { --legend-color: #212428; }
+.app-deal-legend .role-don { --legend-color: #654b72; }
+.app-deal-legend .role-sheriff { --legend-color: #8a7340; }
+
+.app-role-reveal {
+  --reveal-color: #30352b;
+  --reveal-ink: #f4f0e5;
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  min-height: 100%;
+  flex-direction: column;
+  padding:
+    calc(14px + var(--tg-content-safe-area-inset-top, env(safe-area-inset-top, 0px)))
+    calc(12px + var(--tg-content-safe-area-inset-right, env(safe-area-inset-right, 0px)))
+    calc(18px + var(--tg-content-safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)))
+    calc(12px + var(--tg-content-safe-area-inset-left, env(safe-area-inset-left, 0px)));
+  color: var(--reveal-ink);
+  background:
+    radial-gradient(circle at 50% 35%, color-mix(in srgb, var(--reveal-color) 88%, white 8%), transparent 42%),
+    linear-gradient(160deg, color-mix(in srgb, var(--reveal-color) 70%, #292d25), #151813 74%);
+}
+
+.app-role-reveal.role-citizen { --reveal-color: #824a53; --reveal-ink: #f4dfdf; }
+.app-role-reveal.role-mafia { --reveal-color: #34383d; --reveal-ink: #e2e3df; }
+.app-role-reveal.role-don { --reveal-color: #654b72; --reveal-ink: #ebdff0; }
+.app-role-reveal.role-sheriff { --reveal-color: #8a7340; --reveal-ink: #f1e6c8; }
+
+.app-role-reveal > header {
+  display: grid;
+  grid-template-columns: 58px 1fr 58px;
+  align-items: center;
+}
+
+.app-role-reveal > header button {
+  min-height: 38px;
+  padding: 0 8px;
+  border: 1px solid color-mix(in srgb, var(--reveal-ink) 16%, transparent);
+  border-radius: 11px;
+  color: var(--reveal-ink);
+  background: color-mix(in srgb, var(--reveal-ink) 6%, transparent);
+  font-size: 8px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.app-role-reveal > header strong {
+  color: color-mix(in srgb, var(--reveal-ink) 72%, transparent);
+  font-size: 7px;
+  letter-spacing: 0.1em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.app-role-reveal-copy {
+  display: grid;
+  flex: 1;
+  place-content: center;
+  justify-items: center;
+  text-align: center;
+}
+
+.app-role-reveal-copy small {
+  color: color-mix(in srgb, var(--reveal-ink) 68%, transparent);
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.app-role-reveal-copy h2 {
+  margin: 15px 0 0;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(52px, 16vw, 72px);
+  font-weight: 500;
+  letter-spacing: -0.04em;
+}
+
+.app-role-reveal-copy p {
+  max-width: 280px;
+  margin: 12px 0 0;
+  color: color-mix(in srgb, var(--reveal-ink) 70%, transparent);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.app-role-next {
+  min-height: 56px;
+  border: 0;
+  border-radius: 15px;
+  color: #242a19;
+  background: linear-gradient(145deg, #dce79f, #aebb69);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.42), 0 12px 26px rgba(0, 0, 0, 0.28);
+  font-size: 10px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
 .handoff-copy h2 {
   font-size: 33px;
 }
@@ -3254,6 +3447,15 @@ button:focus-visible {
   .private-role-card {
     min-height: 230px;
     padding: 20px;
+  }
+
+  .app-role-tile {
+    min-height: 57px;
+    font-size: 25px;
+  }
+
+  .app-deal-copy h2 {
+    font-size: 27px;
   }
 
   .role-mini-map {
