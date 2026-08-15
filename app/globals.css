@@ -11,10 +11,10 @@
   --app-warm: #dfad63;
   --timer-accent: #d8e98e;
   --vote-locked: #7895a4;
-  --role-citizen: #824a53;
-  --role-mafia: #212428;
-  --role-don: #654b72;
-  --role-sheriff: #8a7340;
+  --role-citizen: #dc4f5d;
+  --role-mafia: #0a0b0d;
+  --role-don: #7a49bd;
+  --role-sheriff: #f0c84b;
 }
 
 * {
@@ -2414,13 +2414,14 @@ button:focus-visible {
     calc(18px + var(--tg-content-safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)))
     calc(12px + var(--tg-content-safe-area-inset-left, env(safe-area-inset-left, 0px)));
   color: var(--reveal-ink);
+  background: var(--reveal-color);
   background:
     radial-gradient(circle at 50% 35%, color-mix(in srgb, var(--reveal-color) 88%, white 8%), transparent 42%),
     linear-gradient(160deg, color-mix(in srgb, var(--reveal-color) 70%, #292d25), #151813 74%);
 }
 
 .app-role-reveal.role-citizen { --reveal-color: #824a53; --reveal-ink: #f4dfdf; }
-.app-role-reveal.role-mafia { --reveal-color: #34383d; --reveal-ink: #e2e3df; }
+.app-role-reveal.role-mafia { --reveal-color: #212428; --reveal-ink: #e2e3df; }
 .app-role-reveal.role-don { --reveal-color: #654b72; --reveal-ink: #ebdff0; }
 .app-role-reveal.role-sheriff { --reveal-color: #8a7340; --reveal-ink: #f1e6c8; }
 
