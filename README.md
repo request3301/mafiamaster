@@ -55,9 +55,15 @@ affects timers started afterward, not a countdown already in progress.
   any other seat, including a previously eliminated player whose role remains
   known to the app. A check can also be skipped explicitly; the skip is written
   to the event log and night summary.
-- The shared penalty panel is available during regular and tie speeches, with
-  controls to add or remove fouls and yellow cards, but not during voting or
-  night. Farewell penalties use the dedicated controls on the farewell screen.
+- When the first night produces a kill after zero or one players left during
+  the zero round, the victim receives a separate 20-second best-move stage.
+  The moderator selects exactly three seat numbers or explicitly skips the
+  best move. The victim then receives the 60-second farewell speech before the
+  morning round begins.
+- The shared penalty panel is available during regular, tie, and farewell
+  speeches, with controls to add or remove fouls and yellow cards, but not
+  during voting or night. The farewell screen keeps dedicated controls for the
+  departing player while the shared panel can target anyone else still alive.
 
 ## Runtime Shape
 
