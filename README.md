@@ -22,6 +22,11 @@ control to undo the latest recorded action without leaving the current game.
 
 ## Game Flow
 
+- With in-app dealing, the moderator keeps the phone. Every remaining role is
+  shown as a numbered velvet-colour tile; the active player names a number from
+  1 to N, and the moderator taps it to reveal the role full-screen. Continuing
+  assigns the role and renumbers the remaining tiles from 1 to N. **Back**
+  cancels the open card or restores the last dealt card under its prior number.
 - After the final regular speech, review nominations in a compact full-screen
   table with one row per speaker in the actual speech order. In each row, choose
   **Никого** or a living candidate to assign, replace, or remove the nomination.
