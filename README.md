@@ -57,8 +57,8 @@ affects timers started afterward, not a countdown already in progress.
   to the event log and night summary.
 - When the first night produces a kill after zero or one players left during
   the zero round, the victim receives a separate 20-second best-move stage.
-  The moderator selects exactly three seat numbers or explicitly skips the
-  best move. The victim then receives the 60-second farewell speech before the
+  The moderator selects exactly three other seat numbers or explicitly skips
+  the best move. The victim then receives the 60-second farewell speech before the
   morning round begins.
 - The shared penalty panel is available during regular, tie, and farewell
   speeches, with controls to add or remove fouls and yellow cards, but not
