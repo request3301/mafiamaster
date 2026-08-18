@@ -86,6 +86,83 @@ test("game state survives a serialized storage round trip", () => {
   assert.deepEqual(parseGameState(serializeGameState(state)), state);
 });
 
+test("a full active game round trip preserves progress and undo history", () => {
+  const players = makePlayers().map((player, index) => ({
+    ...player,
+    fouls: index === 2 ? 2 : 0,
+    yellowCards: index === 3 ? 1 : 0,
+    nomination: index === 4 ? 2 : null,
+    nominatedBy: index === 4 ? 1 : null,
+    alive: index !== 6,
+    eliminatedBy: index === 6 ? "vote" : null,
+  }));
+  const appDealHistory = players.map((player, index) => ({
+    playerIndex: index,
+    cardIndex: 0,
+    role: player.role,
+  }));
+  const activeSnapshot = makeSnapshot({
+    players,
+    stage: "vote",
+    dealMethod: "app",
+    dealIndex: 9,
+    appRoleDeck: [],
+    appDealHistory,
+    day: 2,
+    round: 3,
+    roundStarter: 4,
+    currentSeat: 6,
+    selectedSeat: 5,
+    spokenSeats: [4, 5],
+    seconds: 17,
+    timerBaseSeconds: 50,
+    timerTotalSeconds: 50,
+    running: false,
+    voteState: {
+      candidates: [5, 8],
+      eligible: [1, 2, 3, 4, 5, 6, 8, 9, 10],
+      index: 1,
+      confirmed: { 5: [1, 2, 4], 8: [3] },
+      draft: [6],
+    },
+    tieSeats: [5, 8],
+    tieSpeechIndex: 1,
+    tieCycle: 2,
+    liftDraft: [1, 4, 6],
+    voteSkips: 1,
+    nightTarget: 8,
+    nightShotChoice: 6,
+    nightRecords: [
+      { type: "shot", target: 6 },
+      { type: "don", target: 10, result: "Шериф", checkedEmptySeat: false },
+      { type: "sheriff", target: 7, result: "Мафия", checkedEmptySeat: true },
+    ],
+    pendingBestMoveSeat: 6,
+    bestMoveDraft: [1, 2, 3],
+    bestMoveRecords: [{ night: 2, playerSeat: 6, selectedSeats: [1, 2, 3], skipped: false }],
+    farewellState: { seats: [6, 8], index: 0, reason: "shot", after: "night" },
+    nominationRecords: [{ day: 2, round: 3, order: 2, nominatorSeat: 1, candidateSeat: 5 }],
+    eventLog: ["Проверка Шерифа записана", "Игрок 1 выставил 5"],
+  });
+  const state = makeState({
+    savedAt: 8_000,
+    deadlineAt: null,
+    snapshot: activeSnapshot,
+    history: [{
+      label: "выбор кандидата",
+      snapshot: makeSnapshot({ running: false, seconds: 21, eventLog: ["Предыдущее действие"] }),
+      deadlineAt: null,
+    }],
+  });
+
+  const parsed = parseGameState(serializeGameState(state));
+  assert.ok(parsed);
+  assert.deepEqual(parsed, state);
+  const resumed = resumeGameState(parsed, 50_000);
+  assert.deepEqual(resumed.snapshot, activeSnapshot);
+  assert.deepEqual(resumed.history, state.history);
+});
+
 test("invalid or incompatible saved state is ignored", () => {
   assert.equal(parseGameState("not json"), null);
   assert.equal(parseGameState(JSON.stringify({ ...makeState(), version: 2 })), null);
