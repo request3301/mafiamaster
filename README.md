@@ -18,15 +18,20 @@ npm run build
 ```
 
 Refreshing or closing the page preserves the active game. Reopening the app
-restores the stage, roles, votes, penalties, event log, undo history, and timer;
-a running countdown accounts for the time elapsed while the app was closed.
-Starting a new game clears the saved party. Use the in-app **Back** control to
-undo the latest recorded action without leaving the current game. Open the gear
-button to set regular speech to 50 seconds, 60 seconds, or a custom duration,
-and free seating to 40 seconds or a custom duration. In Telegram, the active
-game and preferences use the Mini App `DeviceStorage`; in a regular browser or
-an older Telegram client, they fall back to `localStorage`. Saving preference
-changes affects timers started afterward, not a countdown already in progress.
+restores its full state: the stage, dealt roles and remaining deck, votes,
+penalties, nominations, night and best-move records, event log, undo history,
+and timer. A running countdown accounts for time spent while the app was
+closed, while a paused timer stays paused. For privacy, an open role-reveal
+card or role summary is closed before the saved game is shown. Invalid or
+incompatible saves are ignored, and the newest valid copy wins when both
+storage locations contain a save. Starting a new game clears the saved party.
+Use the in-app **Back** control to undo the latest recorded action without
+leaving the current game. Open the gear button to set regular speech to 50
+seconds, 60 seconds, or a custom duration, and free seating to 40 seconds or a
+custom duration. In Telegram, the active game and preferences use the Mini App
+`DeviceStorage`; in a regular browser or an older Telegram client, they fall
+back to `localStorage`. Saving preference changes affects timers started
+afterward, not a countdown already in progress.
 
 ## Game Flow
 

@@ -812,7 +812,6 @@ export default function Home() {
     } catch {
       deviceResponseReceived = true;
       deviceHydrationPendingRef.current = false;
-      setGameStorageRevision((current) => current + 1);
       finishHydration(localState, false);
     }
 
