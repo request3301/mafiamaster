@@ -214,9 +214,13 @@ function isVoteState(value: unknown): value is VoteState {
   if (!isRecord(value)
     || !isSeatList(value.candidates)
     || !isSeatList(value.eligible)
-    || !isIntegerBetween(value.index, 0)
     || !isRecord(value.confirmed)
     || !isSeatList(value.draft)) return false;
+
+  const indexIsValid = value.candidates.length === 0
+    ? value.index === 0
+    : isIntegerBetween(value.index, 0, value.candidates.length - 1);
+  if (!indexIsValid) return false;
 
   return Object.entries(value.confirmed).every(([candidate, voters]) => (
     isSeat(Number(candidate)) && isSeatList(voters)
@@ -305,7 +309,7 @@ function isDealStateCompatible(snapshot: GameSnapshot) {
     entry.playerIndex === index
     && players[index]?.role === entry.role
   ));
-  const appHistoryCardIndexesAreUnique = new Set(appDealHistory.map((entry) => entry.cardIndex)).size === appDealHistory.length;
+  const appHistoryCardIndexesAreValid = appDealHistory.every((entry, index) => entry.cardIndex < 10 - index);
 
   if (stage === "dealChoice") {
     return dealMethod === null
@@ -324,7 +328,7 @@ function isDealStateCompatible(snapshot: GameSnapshot) {
       && rolesBeforeDealIndex
       && rolesAfterDealIndex
       && appHistoryIsSequential
-      && appHistoryCardIndexesAreUnique
+      && appHistoryCardIndexesAreValid
       && hasExactRoleCounts(players, appRoleDeck);
   }
 
@@ -402,10 +406,9 @@ export function isGameSnapshot(value: unknown): value is GameSnapshot {
 }
 
 function isUndoEntry(value: unknown): value is UndoEntry {
-  return isRecord(value)
-    && typeof value.label === "string"
-    && isGameSnapshot(value.snapshot)
-    && (value.deadlineAt === undefined || value.deadlineAt === null || isFiniteNumber(value.deadlineAt));
+  if (!isRecord(value) || typeof value.label !== "string" || !isGameSnapshot(value.snapshot)) return false;
+  if (value.deadlineAt !== undefined && value.deadlineAt !== null && !isFiniteNumber(value.deadlineAt)) return false;
+  return !value.snapshot.running || value.deadlineAt === undefined || value.deadlineAt !== null;
 }
 
 function isPersistedGameState(value: unknown): value is PersistedGameState {
@@ -455,13 +458,16 @@ export function resumeGameState(state: PersistedGameState, now: number): Persist
   };
   const resumedHistory = state.history.map((entry) => {
     if (!entry.snapshot.running) return entry;
-    if (entry.deadlineAt === undefined || entry.deadlineAt === null) {
+    const deadlineAt = entry.deadlineAt === undefined
+      ? state.savedAt + entry.snapshot.seconds * 1000
+      : entry.deadlineAt;
+    if (deadlineAt === null || !Number.isFinite(deadlineAt)) {
       return { ...entry, deadlineAt: null, snapshot: { ...entry.snapshot, running: false } };
     }
-    const seconds = Math.max(0, Math.ceil((entry.deadlineAt - safeNow) / 1000));
+    const seconds = Math.max(0, Math.ceil((deadlineAt - safeNow) / 1000));
     return {
       ...entry,
-      deadlineAt: seconds > 0 ? entry.deadlineAt : null,
+      deadlineAt: seconds > 0 ? deadlineAt : null,
       snapshot: { ...entry.snapshot, seconds, running: seconds > 0 },
     };
   });

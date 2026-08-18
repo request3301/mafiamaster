@@ -107,6 +107,7 @@ const roleClassNames: Record<Role, string> = {
   Шериф: "sheriff",
 };
 const roleOptions: Role[] = ["Мирный", "Мафия", "Дон", "Шериф"];
+const GAME_STATE_CLEAR_MARKER_PREFIX = "mafia-master-game-state-cleared-v1:";
 
 const emptyVoteState: VoteState = {
   candidates: [],
@@ -221,6 +222,12 @@ function getTelegramDeviceStorage() {
   return webApp.DeviceStorage;
 }
 
+function parseGameStateClearMarker(value: string | null | undefined) {
+  if (!value?.startsWith(GAME_STATE_CLEAR_MARKER_PREFIX)) return null;
+  const clearedAt = Number(value.slice(GAME_STATE_CLEAR_MARKER_PREFIX.length));
+  return Number.isFinite(clearedAt) && clearedAt >= 0 ? clearedAt : null;
+}
+
 export default function Home() {
   const [players, setPlayers] = useState(initialPlayers);
   const [stage, setStage] = useState<Stage>("dealChoice");
@@ -300,8 +307,9 @@ export default function Home() {
   const clearPersistedGameState = () => {
     gameStorageGenerationRef.current += 1;
     latestSerializedGameRef.current = null;
+    const clearMarker = `${GAME_STATE_CLEAR_MARKER_PREFIX}${Date.now()}`;
     try {
-      window.localStorage.removeItem(GAME_STATE_STORAGE_KEY);
+      window.localStorage.setItem(GAME_STATE_STORAGE_KEY, clearMarker);
     } catch {}
 
     const deviceStorage = getTelegramDeviceStorage();
@@ -311,7 +319,23 @@ export default function Home() {
     }
     const operation = () => new Promise<void>((resolve) => {
       try {
-        deviceStorage.removeItem(GAME_STATE_STORAGE_KEY, () => resolve());
+        deviceStorage.removeItem(GAME_STATE_STORAGE_KEY, (error, removed) => {
+          const succeeded = !error && removed !== false;
+          if (succeeded) {
+            try {
+              if (window.localStorage.getItem(GAME_STATE_STORAGE_KEY) === clearMarker) {
+                window.localStorage.removeItem(GAME_STATE_STORAGE_KEY);
+              }
+            } catch {}
+            resolve();
+            return;
+          }
+          try {
+            deviceStorage.setItem(GAME_STATE_STORAGE_KEY, clearMarker, () => resolve());
+          } catch {
+            resolve();
+          }
+        });
       } catch {
         resolve();
       }
@@ -712,7 +736,7 @@ export default function Home() {
         restoreSnapshot(resumedState.snapshot);
         setHistory(resumedState.history);
         setToast("Сохранённая партия восстановлена");
-      } else if (initialLocalSerialized !== null) {
+      } else if (initialLocalSerialized !== null && parseGameStateClearMarker(initialLocalSerialized) === null) {
         try {
           window.localStorage.removeItem(GAME_STATE_STORAGE_KEY);
         } catch {}
@@ -739,12 +763,30 @@ export default function Home() {
         deviceResponseReceived = true;
         deviceHydrationPendingRef.current = false;
         if (error) {
-          if (!hydrated) finishHydration(localState, false);
+          if (gameClearRequestedRef.current) {
+            clearPersistedGameState();
+            gameClearRequestedRef.current = false;
+            lastPersistedSignatureRef.current = null;
+          } else if (!hydrated) {
+            finishHydration(localState, false);
+          }
           setGameStorageRevision((current) => current + 1);
           return;
         }
 
-        const deviceState = parseGameState(value);
+        const currentLocalSerialized = (() => {
+          try {
+            return window.localStorage.getItem(GAME_STATE_STORAGE_KEY);
+          } catch {
+            return null;
+          }
+        })();
+        const localClearAt = parseGameStateClearMarker(currentLocalSerialized);
+        const deviceClearAt = parseGameStateClearMarker(value);
+        const clearAt = Math.max(localClearAt ?? -1, deviceClearAt ?? -1);
+        const deviceState = deviceClearAt === null
+          ? parseGameState(value)
+          : null;
         if (gameClearRequestedRef.current) {
           clearPersistedGameState();
           gameClearRequestedRef.current = false;
@@ -752,13 +794,13 @@ export default function Home() {
           setGameStorageRevision((current) => current + 1);
           return;
         }
-        let currentLocalSerialized: string | null = null;
-        try {
-          currentLocalSerialized = window.localStorage.getItem(GAME_STATE_STORAGE_KEY);
-        } catch {}
         const currentLocalState = parseGameState(currentLocalSerialized);
         const usableState = (state: ReturnType<typeof parseGameState>) => (
-          state && state.snapshot.stage !== "dealChoice" ? state : null
+          state
+          && state.snapshot.stage !== "dealChoice"
+          && (clearAt < 0 || state.savedAt > clearAt)
+            ? state
+            : null
         );
         const storedState = selectNewestGameState(
           usableState(deviceState),
@@ -997,6 +1039,8 @@ export default function Home() {
   };
 
   const beginAppDeal = () => {
+    gameClearRequestedRef.current = true;
+    if (!deviceHydrationPendingRef.current) clearPersistedGameState();
     setPlayers(initialPlayers.map((player) => ({ ...player })));
     setDealMethod("app");
     setDealIndex(0);
@@ -1009,6 +1053,8 @@ export default function Home() {
   };
 
   const beginManualDeal = () => {
+    gameClearRequestedRef.current = true;
+    if (!deviceHydrationPendingRef.current) clearPersistedGameState();
     setPlayers(initialPlayers.map((player) => ({ ...player })));
     setDealMethod("cards");
     setDealIndex(0);

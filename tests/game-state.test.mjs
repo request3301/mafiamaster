@@ -98,6 +98,10 @@ test("invalid or incompatible saved state is ignored", () => {
     ...makeState(),
     snapshot: makeSnapshot({ stage: "appDeal", dealMethod: "cards", appRoleDeck: [], appDealHistory: [] }),
   })), null);
+  assert.equal(parseGameState(JSON.stringify({
+    ...makeState(),
+    snapshot: { ...makeSnapshot(), voteState: { ...makeSnapshot().voteState, candidates: [1], eligible: [1], index: 1 } },
+  })), null);
 });
 
 test("the newest valid storage copy wins", () => {
@@ -140,13 +144,14 @@ test("role-reveal UI is closed when a saved game reopens", () => {
       dealIndex: 9,
       players: makePlayers().map((player, index) => ({ ...player, role: index < 9 ? roles[index] : null })),
       appRoleDeck: ["Шериф"],
-      appDealHistory: roles.map((role, index) => ({ playerIndex: index, cardIndex: index, role })),
+      appDealHistory: roles.map((role, index) => ({ playerIndex: index, cardIndex: 0, role })),
       selectedAppCardIndex: 0,
       masterSummaryVisible: true,
       running: false,
       seconds: 50,
     }),
   });
+  assert.deepEqual(parseGameState(serializeGameState(state)), state);
   const resumed = resumeGameState(state, 50_000);
 
   assert.equal(resumed.snapshot.selectedAppCardIndex, null);
@@ -161,9 +166,27 @@ test("undo history timers also account for time spent closed", () => {
       snapshot: makeSnapshot({ seconds: 8, running: true }),
     }],
   });
-  const resumed = resumeGameState(state, 7_500);
+  const parsed = parseGameState(serializeGameState(state));
+  assert.ok(parsed);
+  const resumed = resumeGameState(parsed, 7_500);
 
   assert.equal(resumed.history[0].snapshot.seconds, 2);
   assert.equal(resumed.history[0].snapshot.running, true);
   assert.equal(resumed.history[0].deadlineAt, 9_000);
+});
+
+test("legacy running undo timers migrate from the save timestamp", () => {
+  const state = makeState({
+    history: [{
+      label: "речь",
+      snapshot: makeSnapshot({ seconds: 8, running: true }),
+    }],
+  });
+  const parsed = parseGameState(serializeGameState(state));
+  assert.ok(parsed);
+  const resumed = resumeGameState(parsed, 7_500);
+
+  assert.equal(resumed.history[0].snapshot.seconds, 6);
+  assert.equal(resumed.history[0].snapshot.running, true);
+  assert.equal(resumed.history[0].deadlineAt, 13_000);
 });
