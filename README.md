@@ -1,10 +1,9 @@
 # Mafia Master
 
-A compact moderator console for a ten-player sports-mafia game. The same
-stateless React interface runs as a Telegram Web App, a vinext site, and a
-static GitHub Pages build; it is designed around a 360×640 viewport and keeps
-the current game state only in browser memory. Host timer preferences are
-stored locally on the host device.
+A compact moderator console for a ten-player sports-mafia game. The same React
+interface runs as a Telegram Web App, a vinext site, and a static GitHub Pages
+build. It is designed around a 360×640 viewport and automatically saves the
+active game and host timer preferences on the host device.
 
 ## Prerequisites
 
@@ -18,13 +17,21 @@ npm run dev
 npm run build
 ```
 
-Refreshing or closing the page starts a new game. Use the in-app **Back**
-control to undo the latest recorded action without leaving the current game.
-Open the gear button to set regular speech to 50 seconds, 60 seconds, or a
-custom duration, and free seating to 40 seconds or a custom duration. In
-Telegram, preferences use the Mini App `DeviceStorage`; in a regular browser
-or an older Telegram client, they fall back to `localStorage`. Saving changes
-affects timers started afterward, not a countdown already in progress.
+Refreshing or closing the page preserves the active game. Reopening the app
+restores its full state: the stage, dealt roles and remaining deck, votes,
+penalties, nominations, night and best-move records, event log, undo history,
+and timer. A running countdown accounts for time spent while the app was
+closed, while a paused timer stays paused. For privacy, an open role-reveal
+card or role summary is closed before the saved game is shown. Invalid or
+incompatible saves are ignored, and the newest valid copy wins when both
+storage locations contain a save. Starting a new game clears the saved party.
+Use the in-app **Back** control to undo the latest recorded action without
+leaving the current game. Open the gear button to set regular speech to 50
+seconds, 60 seconds, or a custom duration, and free seating to 40 seconds or a
+custom duration. In Telegram, the active game and preferences use the Mini App
+`DeviceStorage`; in a regular browser or an older Telegram client, they fall
+back to `localStorage`. Saving preference changes affects timers started
+afterward, not a countdown already in progress.
 
 ## Game Flow
 
@@ -70,8 +77,8 @@ affects timers started afterward, not a countdown already in progress.
 - `app/` owns the interface and game rules used by every deployment target.
 - `github-pages/src/main.tsx` mounts that same app for the static build instead
   of maintaining a second implementation.
-- `.openai/hosting.json` declares no D1 or R2 bindings. The game does not send
-  or persist game state on a server.
+- `.openai/hosting.json` declares no D1 or R2 bindings. Saved games stay on the
+  current device and are not sent to a server or synchronized across devices.
 - `vite.config.ts` retains optional local binding support for the example D1
   surface; the Mafia Master interface does not use it.
 

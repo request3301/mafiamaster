@@ -24,6 +24,7 @@ test("server-renders the Mafia Master deal screen", async () => {
   assert.match(html, /Как раздать роли\?/);
   assert.match(html, /Через приложение/);
   assert.match(html, /При помощи колоды/);
+  assert.match(html, /Партия автоматически сохраняется на этом устройстве/);
   assert.match(html, /Открыть настройки таймеров/);
   assert.doesNotMatch(html, />Настр\.<\/strong>/);
   assert.doesNotMatch(html, /Your site is taking shape/);
