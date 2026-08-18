@@ -348,9 +348,45 @@ function isDealStateCompatible(snapshot: GameSnapshot) {
     && selectedAppCardIndex === null
     && (dealMethod === "app" ? appDealHistory.length === 10 : appDealHistory.length === 0)
     && assignedCount === 10
-    && hasExactRoleCounts(players);
+    && hasExactRoleCounts(players)
+    && (dealMethod !== "app" || (appHistoryIsSequential && appHistoryCardIndexesAreValid));
   if (stage === "dealReady") return completedDeal && dealIndex === 9;
   return completedDeal;
+}
+
+function isStageProgressCompatible(snapshot: GameSnapshot) {
+  const alivePlayers = snapshot.players.filter((player) => player.alive);
+  const hasAliveRole = (role: Role) => alivePlayers.some((player) => player.role === role);
+
+  if (snapshot.stage === "farewellSpeech") {
+    return snapshot.farewellState !== null
+      && snapshot.farewellState.seats[snapshot.farewellState.index] === snapshot.currentSeat;
+  }
+  if (snapshot.stage === "vote" || snapshot.stage === "revote") {
+    return snapshot.voteState.candidates.length > 0;
+  }
+  if (snapshot.stage === "tieSpeech") {
+    return snapshot.tieSeats.length > 1
+      && snapshot.tieSeats[snapshot.tieSpeechIndex] === snapshot.currentSeat;
+  }
+  if (snapshot.stage === "lift") return snapshot.tieSeats.length > 1;
+  if (snapshot.stage === "nightShot") {
+    return hasAliveRole("Мафия") || hasAliveRole("Дон");
+  }
+  if (snapshot.stage === "nightDon") {
+    const don = alivePlayers.find((player) => player.role === "Дон");
+    return don !== undefined && snapshot.nightTarget !== don.seat;
+  }
+  if (snapshot.stage === "nightSheriff") {
+    const sheriff = alivePlayers.find((player) => player.role === "Шериф");
+    return sheriff !== undefined && snapshot.nightTarget !== sheriff.seat;
+  }
+  if (snapshot.stage === "bestMove") return snapshot.pendingBestMoveSeat !== null;
+  if (snapshot.stage === "gameOver") {
+    const blackCount = alivePlayers.filter((player) => player.role === "Мафия" || player.role === "Дон").length;
+    return blackCount === 0 || blackCount >= alivePlayers.length - blackCount;
+  }
+  return true;
 }
 
 export function isGameSnapshot(value: unknown): value is GameSnapshot {
@@ -402,7 +438,8 @@ export function isGameSnapshot(value: unknown): value is GameSnapshot {
   const snapshot = value as unknown as GameSnapshot;
   return (snapshot.selectedAppCardIndex === null || snapshot.selectedAppCardIndex < snapshot.appRoleDeck.length)
     && (snapshot.stage === "appDeal" || snapshot.selectedAppCardIndex === null)
-    && isDealStateCompatible(snapshot);
+    && isDealStateCompatible(snapshot)
+    && isStageProgressCompatible(snapshot);
 }
 
 function isUndoEntry(value: unknown): value is UndoEntry {

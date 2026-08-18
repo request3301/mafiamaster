@@ -102,6 +102,14 @@ test("invalid or incompatible saved state is ignored", () => {
     ...makeState(),
     snapshot: { ...makeSnapshot(), voteState: { ...makeSnapshot().voteState, candidates: [1], eligible: [1], index: 1 } },
   })), null);
+  assert.equal(parseGameState(JSON.stringify({
+    ...makeState(),
+    snapshot: makeSnapshot({ stage: "vote" }),
+  })), null);
+  assert.equal(parseGameState(JSON.stringify({
+    ...makeState(),
+    snapshot: makeSnapshot({ stage: "farewellSpeech" }),
+  })), null);
 });
 
 test("the newest valid storage copy wins", () => {
@@ -152,6 +160,28 @@ test("role-reveal UI is closed when a saved game reopens", () => {
     }),
   });
   assert.deepEqual(parseGameState(serializeGameState(state)), state);
+  const completedState = makeState({
+    deadlineAt: null,
+    snapshot: makeSnapshot({
+      stage: "dealReady",
+      dealMethod: "app",
+      dealIndex: 9,
+      players: makePlayers(),
+      appRoleDeck: [],
+      selectedAppCardIndex: null,
+      appDealHistory: [...roles, "Шериф"].map((role, index) => ({ playerIndex: index, cardIndex: 0, role })),
+      masterSummaryVisible: true,
+      running: false,
+    }),
+  });
+  assert.deepEqual(parseGameState(serializeGameState(completedState)), completedState);
+  assert.equal(parseGameState(serializeGameState({
+    ...completedState,
+    snapshot: {
+      ...completedState.snapshot,
+      appDealHistory: completedState.snapshot.appDealHistory.map((entry, index) => index === 9 ? { ...entry, cardIndex: 1 } : entry),
+    },
+  })), null);
   const resumed = resumeGameState(state, 50_000);
 
   assert.equal(resumed.snapshot.selectedAppCardIndex, null);

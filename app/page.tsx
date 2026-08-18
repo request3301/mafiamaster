@@ -733,7 +733,7 @@ export default function Home() {
         if (syncTelegram && deviceStorage) enqueueTelegramGameWrite(canonicalSerialized);
 
         const resumedState = resumeGameState(usableState, Date.now());
-        restoreSnapshot(resumedState.snapshot);
+        restoreSnapshot(resumedState.snapshot, resumedState.deadlineAt);
         setHistory(resumedState.history);
         setToast("Сохранённая партия восстановлена");
       } else if (initialLocalSerialized !== null && parseGameStateClearMarker(initialLocalSerialized) === null) {
