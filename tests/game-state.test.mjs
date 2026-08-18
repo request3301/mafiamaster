@@ -1,0 +1,144 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import {
+  GAME_STATE_VERSION,
+  parseGameState,
+  resumeGameState,
+  selectNewestGameState,
+  serializeGameState,
+} from "../app/game-state.ts";
+
+function makePlayers() {
+  return Array.from({ length: 10 }, (_, index) => ({
+    seat: index + 1,
+    name: `Игрок ${index + 1}`,
+    role: null,
+    fouls: 0,
+    yellowCards: 0,
+    shortSpeechPending: false,
+    nomination: null,
+    nominatedBy: null,
+    alive: true,
+    eliminatedBy: null,
+  }));
+}
+
+function makeSnapshot(overrides = {}) {
+  return {
+    players: makePlayers(),
+    stage: "speech",
+    dealMethod: "cards",
+    dealIndex: 9,
+    appRoleDeck: [],
+    selectedAppCardIndex: null,
+    appDealHistory: [],
+    masterSummaryVisible: false,
+    day: 1,
+    round: 1,
+    roundStarter: 1,
+    currentSeat: 3,
+    selectedSeat: 3,
+    spokenSeats: [1, 2],
+    seconds: 0,
+    timerBaseSeconds: 50,
+    timerTotalSeconds: 50,
+    running: true,
+    voteState: {
+      candidates: [],
+      eligible: [],
+      index: 0,
+      confirmed: {},
+      draft: [],
+    },
+    tieSeats: [],
+    tieSpeechIndex: 0,
+    tieCycle: 0,
+    liftDraft: [],
+    voteSkips: 0,
+    nightTarget: 1,
+    nightShotChoice: null,
+    nightRecords: [],
+    pendingBestMoveSeat: null,
+    bestMoveDraft: [],
+    bestMoveRecords: [],
+    farewellState: null,
+    nominationRecords: [],
+    eventLog: ["Речь игрока 3"],
+    ...overrides,
+  };
+}
+
+function makeState(overrides = {}) {
+  return {
+    version: GAME_STATE_VERSION,
+    savedAt: 5_000,
+    deadlineAt: 11_000,
+    snapshot: makeSnapshot(),
+    history: [],
+    ...overrides,
+  };
+}
+
+test("game state survives a serialized storage round trip", () => {
+  const state = makeState();
+  assert.deepEqual(parseGameState(serializeGameState(state)), state);
+});
+
+test("invalid or incompatible saved state is ignored", () => {
+  assert.equal(parseGameState("not json"), null);
+  assert.equal(parseGameState(JSON.stringify({ ...makeState(), version: 2 })), null);
+  assert.equal(parseGameState(JSON.stringify({ ...makeState(), deadlineAt: null })), null);
+  assert.equal(parseGameState(JSON.stringify({
+    ...makeState(),
+    snapshot: { ...makeSnapshot(), players: makePlayers().slice(1) },
+  })), null);
+});
+
+test("the newest valid storage copy wins", () => {
+  const older = makeState({ savedAt: 1_000 });
+  const newer = makeState({ savedAt: 2_000, snapshot: makeSnapshot({ currentSeat: 7 }) });
+
+  assert.equal(selectNewestGameState(older, null, newer), newer);
+  assert.equal(selectNewestGameState(null, older), older);
+  assert.equal(selectNewestGameState(null, null), null);
+});
+
+test("a running timer reflects time elapsed while the app was closed", () => {
+  const state = makeState();
+  const resumed = resumeGameState(state, 7_500);
+
+  assert.equal(resumed.snapshot.seconds, 4);
+  assert.equal(resumed.snapshot.running, true);
+  assert.equal(resumeGameState(state, 11_001).snapshot.seconds, 0);
+  assert.equal(resumeGameState(state, 11_001).snapshot.running, false);
+});
+
+test("a paused timer keeps its saved value", () => {
+  const state = makeState({
+    deadlineAt: null,
+    snapshot: makeSnapshot({ running: false, seconds: 23 }),
+  });
+
+  const resumed = resumeGameState(state, 50_000);
+  assert.equal(resumed.snapshot.seconds, 23);
+  assert.equal(resumed.snapshot.running, false);
+});
+
+test("role-reveal UI is closed when a saved game reopens", () => {
+  const state = makeState({
+    deadlineAt: null,
+    snapshot: makeSnapshot({
+      stage: "appDeal",
+      appRoleDeck: ["Шериф"],
+      selectedAppCardIndex: 0,
+      masterSummaryVisible: true,
+      running: false,
+      seconds: 50,
+    }),
+  });
+  const resumed = resumeGameState(state, 50_000);
+
+  assert.equal(resumed.snapshot.selectedAppCardIndex, null);
+  assert.equal(resumed.snapshot.masterSummaryVisible, false);
+});

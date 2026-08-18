@@ -13,6 +13,28 @@ import {
   type NominationPair,
   type Winner,
 } from "./game-rules";
+import {
+  GAME_STATE_STORAGE_KEY,
+  GAME_STATE_VERSION,
+  parseGameState,
+  resumeGameState,
+  selectNewestGameState,
+  serializeGameState,
+  type AppDealHistoryEntry,
+  type BestMoveRecord,
+  type DealMethod,
+  type EliminationReason,
+  type FarewellState,
+  type GameSnapshot,
+  type NightRecord,
+  type NominationRecord,
+  type Player,
+  type Role,
+  type Stage,
+  type UndoEntry,
+  type VoteMap,
+  type VoteState,
+} from "./game-state";
 import { restoreNumberedCard, takeNumberedCard } from "./role-deal";
 import {
   DEFAULT_HOST_SETTINGS,
@@ -23,136 +45,16 @@ import {
   type HostSettings,
 } from "./host-settings";
 
-type Stage =
-  | "dealChoice"
-  | "appDeal"
-  | "manualDeal"
-  | "dealReady"
-  | "agreement"
-  | "freeSeating"
-  | "morningReady"
-  | "speech"
-  | "farewellSpeech"
-  | "nominationReview"
-  | "vote"
-  | "tieSpeech"
-  | "revote"
-  | "lift"
-  | "nightShot"
-  | "nightDon"
-  | "nightSheriff"
-  | "nightSummary"
-  | "bestMove"
-  | "gameOver";
-
-type Role = "Мирный" | "Мафия" | "Дон" | "Шериф";
-type DealMethod = "app" | "cards" | null;
-type VoteMap = Record<number, number[]>;
 type SpeechSettingMode = "50" | "60" | "custom";
 type FreeSeatingSettingMode = "40" | "custom";
 type SettingsDraft = {
   speechSeconds: string;
   freeSeatingSeconds: string;
 };
-type EliminationReason = "fouls" | "yellowCards" | "vote" | "shot" | null;
-type FarewellState = {
-  seats: number[];
-  index: number;
-  reason: "vote" | "shot";
-  after: "night" | "round";
-} | null;
-
-type Player = {
-  seat: number;
-  name: string;
-  role: Role | null;
-  fouls: number;
-  yellowCards: number;
-  shortSpeechPending: boolean;
-  nomination: number | null;
-  nominatedBy: number | null;
-  alive: boolean;
-  eliminatedBy: EliminationReason;
-};
-
-type NominationRecord = {
-  day: number;
-  round: number;
-  order: number;
-  nominatorSeat: number;
-  candidateSeat: number;
-};
-
-type VoteState = {
-  candidates: number[];
-  eligible: number[];
-  index: number;
-  confirmed: VoteMap;
-  draft: number[];
-};
-
-type NightRecord =
-  | { type: "shot"; target: number | null }
-  | { type: "don"; target: number | null; result: "Шериф" | "Не шериф" | "Пропуск"; checkedEmptySeat: boolean }
-  | { type: "sheriff"; target: number | null; result: "Мафия" | "Мирный" | "Пропуск"; checkedEmptySeat: boolean };
-
-type AppDealHistoryEntry = {
-  playerIndex: number;
-  cardIndex: number;
-  role: Role;
-};
-
-type BestMoveRecord = {
-  night: number;
-  playerSeat: number;
-  selectedSeats: number[];
-  skipped: boolean;
-};
-
-type GameSnapshot = {
-  players: Player[];
-  stage: Stage;
-  dealMethod: DealMethod;
-  dealIndex: number;
-  appRoleDeck: Role[];
-  selectedAppCardIndex: number | null;
-  appDealHistory: AppDealHistoryEntry[];
-  masterSummaryVisible: boolean;
-  day: number;
-  round: number;
-  roundStarter: number;
-  currentSeat: number;
-  selectedSeat: number;
-  spokenSeats: number[];
-  seconds: number;
-  timerBaseSeconds: number;
-  timerTotalSeconds: number;
-  running: boolean;
-  voteState: VoteState;
-  tieSeats: number[];
-  tieSpeechIndex: number;
-  tieCycle: number;
-  liftDraft: number[];
-  voteSkips: number;
-  nightTarget: number;
-  nightShotChoice: number | "miss" | null;
-  nightRecords: NightRecord[];
-  pendingBestMoveSeat: number | null;
-  bestMoveDraft: number[];
-  bestMoveRecords: BestMoveRecord[];
-  farewellState: FarewellState;
-  nominationRecords: NominationRecord[];
-  eventLog: string[];
-};
-
-type UndoEntry = {
-  label: string;
-  snapshot: GameSnapshot;
-};
-
 type TelegramDeviceStorage = {
   getItem: (key: string, callback: (error: string | null, value?: string) => void) => TelegramDeviceStorage;
   setItem: (key: string, value: string, callback?: (error: string | null, stored?: boolean) => void) => TelegramDeviceStorage;
+  removeItem: (key: string, callback?: (error: string | null, removed?: boolean) => void) => TelegramDeviceStorage;
 };
 
 type TelegramWebApp = {
@@ -365,9 +267,13 @@ export default function Home() {
   const [speechSettingMode, setSpeechSettingMode] = useState<SpeechSettingMode>("50");
   const [freeSeatingSettingMode, setFreeSeatingSettingMode] = useState<FreeSeatingSettingMode>("40");
   const [settingsReady, setSettingsReady] = useState(false);
+  const [gameStateReady, setGameStateReady] = useState(false);
   const [, setToast] = useState<string | null>(null);
   const deadlineRef = useRef(0);
   const manualAssignLockRef = useRef(false);
+  const latestSerializedGameRef = useRef<string | null>(null);
+  const lastPersistedSignatureRef = useRef<string | null>(null);
+  const canRemoveTelegramGameRef = useRef(false);
 
   useEffect(() => {
     let disposed = false;
@@ -715,6 +621,167 @@ export default function Home() {
       setRunning(false);
     }
   };
+
+  useEffect(() => {
+    let disposed = false;
+    let settled = false;
+    let fallbackTimer: number | null = null;
+    let localSerialized: string | null = null;
+
+    try {
+      localSerialized = window.localStorage.getItem(GAME_STATE_STORAGE_KEY);
+    } catch {}
+
+    const localState = parseGameState(localSerialized);
+    const deviceStorage = getTelegramDeviceStorage();
+
+    const finishHydration = (
+      storedState: ReturnType<typeof parseGameState>,
+      syncTelegram: boolean,
+    ) => {
+      if (disposed || settled) return;
+      settled = true;
+      if (fallbackTimer !== null) window.clearTimeout(fallbackTimer);
+
+      if (storedState && storedState.snapshot.stage !== "dealChoice") {
+        const canonicalSerialized = serializeGameState(storedState);
+        latestSerializedGameRef.current = canonicalSerialized;
+        try {
+          window.localStorage.setItem(GAME_STATE_STORAGE_KEY, canonicalSerialized);
+        } catch {}
+        if (syncTelegram && deviceStorage) {
+          try {
+            deviceStorage.setItem(GAME_STATE_STORAGE_KEY, canonicalSerialized, (error, stored) => {
+              if (!error && stored !== false) canRemoveTelegramGameRef.current = true;
+            });
+          } catch {}
+        }
+
+        const resumedState = resumeGameState(storedState, Date.now());
+        restoreSnapshot(resumedState.snapshot);
+        setHistory(resumedState.history);
+        setToast("Сохранённая партия восстановлена");
+      } else if (localSerialized !== null) {
+        try {
+          window.localStorage.removeItem(GAME_STATE_STORAGE_KEY);
+        } catch {}
+      }
+
+      lastPersistedSignatureRef.current = null;
+      setGameStateReady(true);
+    };
+
+    if (!deviceStorage) {
+      finishHydration(localState, false);
+      return () => {
+        disposed = true;
+      };
+    }
+
+    fallbackTimer = window.setTimeout(() => finishHydration(localState, false), 2_000);
+    try {
+      deviceStorage.getItem(GAME_STATE_STORAGE_KEY, (error, value) => {
+        if (disposed || settled) return;
+        if (error) {
+          finishHydration(localState, false);
+          return;
+        }
+
+        canRemoveTelegramGameRef.current = true;
+        const deviceState = parseGameState(value);
+        const storedState = selectNewestGameState(deviceState, localState);
+        if (value && !deviceState && !storedState) {
+          try {
+            deviceStorage.removeItem(GAME_STATE_STORAGE_KEY);
+          } catch {}
+        }
+        finishHydration(storedState, true);
+      });
+    } catch {
+      finishHydration(localState, false);
+    }
+
+    return () => {
+      disposed = true;
+      if (fallbackTimer !== null) window.clearTimeout(fallbackTimer);
+    };
+    // Game state must be read once before autosave is allowed to write.
+  }, []);
+
+  useEffect(() => {
+    if (!gameStateReady) return;
+
+    const deviceStorage = getTelegramDeviceStorage();
+    if (stage === "dealChoice") {
+      if (lastPersistedSignatureRef.current === "empty") return;
+      lastPersistedSignatureRef.current = "empty";
+      latestSerializedGameRef.current = null;
+      try {
+        window.localStorage.removeItem(GAME_STATE_STORAGE_KEY);
+      } catch {}
+      if (deviceStorage && canRemoveTelegramGameRef.current) {
+        try {
+          deviceStorage.removeItem(GAME_STATE_STORAGE_KEY);
+        } catch {}
+      }
+      return;
+    }
+
+    let snapshot = captureSnapshot();
+    if (snapshot.running) snapshot = { ...snapshot, seconds: 0 };
+    const deadlineAt = snapshot.running ? deadlineRef.current : null;
+    const signature = JSON.stringify({ snapshot, history, deadlineAt });
+    if (signature === lastPersistedSignatureRef.current) return;
+    lastPersistedSignatureRef.current = signature;
+
+    const serialized = serializeGameState({
+      version: GAME_STATE_VERSION,
+      savedAt: Date.now(),
+      deadlineAt,
+      snapshot,
+      history,
+    });
+    latestSerializedGameRef.current = serialized;
+    try {
+      window.localStorage.setItem(GAME_STATE_STORAGE_KEY, serialized);
+    } catch {}
+    if (deviceStorage) {
+      try {
+        deviceStorage.setItem(GAME_STATE_STORAGE_KEY, serialized, (error, stored) => {
+          if (!error && stored !== false) canRemoveTelegramGameRef.current = true;
+        });
+      } catch {}
+    }
+  });
+
+  useEffect(() => {
+    if (!gameStateReady) return;
+    const flushLatestGame = () => {
+      const serialized = latestSerializedGameRef.current;
+      if (!serialized) return;
+      try {
+        window.localStorage.setItem(GAME_STATE_STORAGE_KEY, serialized);
+      } catch {}
+      const deviceStorage = getTelegramDeviceStorage();
+      if (deviceStorage) {
+        try {
+          deviceStorage.setItem(GAME_STATE_STORAGE_KEY, serialized, (error, stored) => {
+            if (!error && stored !== false) canRemoveTelegramGameRef.current = true;
+          });
+        } catch {}
+      }
+    };
+    const flushWhenHidden = () => {
+      if (document.visibilityState === "hidden") flushLatestGame();
+    };
+
+    window.addEventListener("pagehide", flushLatestGame);
+    document.addEventListener("visibilitychange", flushWhenHidden);
+    return () => {
+      window.removeEventListener("pagehide", flushLatestGame);
+      document.removeEventListener("visibilitychange", flushWhenHidden);
+    };
+  }, [gameStateReady]);
 
   const undo = () => {
     if (stage === "gameOver") setRolesVisible(false);
@@ -1861,9 +1928,9 @@ export default function Home() {
       </form>
     </div>
   ) : null;
-  const settingsLoadingOverlay = !settingsReady ? (
+  const startupLoadingOverlay = !settingsReady || !gameStateReady ? (
     <div className="settings-loading-overlay" role="status" aria-live="polite">
-      <span>Загрузка настроек…</span>
+      <span>{!gameStateReady ? "Восстановление партии…" : "Загрузка настроек…"}</span>
     </div>
   ) : null;
 
@@ -1952,7 +2019,7 @@ export default function Home() {
                   <b>→</b>
                 </button>
               )}
-              <div className="deal-footnote"><i>●</i> Роли хранятся только до конца текущей партии</div>
+              <div className="deal-footnote"><i>●</i> Партия автоматически сохраняется на этом устройстве</div>
             </section>
           )}
 
@@ -2099,7 +2166,7 @@ export default function Home() {
           )}
 
           {settingsDialog}
-          {settingsLoadingOverlay}
+          {startupLoadingOverlay}
         </section>
       </main>
     );
@@ -2591,7 +2658,7 @@ export default function Home() {
         )}
 
         {settingsDialog}
-        {settingsLoadingOverlay}
+        {startupLoadingOverlay}
 
       </section>
     </main>
