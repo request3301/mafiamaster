@@ -121,6 +121,7 @@ export type GameSnapshot = {
 export type UndoEntry = {
   label: string;
   snapshot: GameSnapshot;
+  deadlineAt?: number | null;
 };
 
 export type PersistedGameState = {
@@ -154,6 +155,7 @@ const stages = new Set<Stage>([
   "gameOver",
 ]);
 const roles = new Set<Role>(["Мирный", "Мафия", "Дон", "Шериф"]);
+const roleLimits: Record<Role, number> = { Мирный: 6, Мафия: 2, Дон: 1, Шериф: 1 };
 const eliminationReasons = new Set<Exclude<EliminationReason, null>>(["fouls", "yellowCards", "vote", "shot"]);
 const MAX_PERSISTED_CHARACTERS = 5 * 1024 * 1024;
 const MAX_UNDO_ENTRIES = 25;
@@ -269,6 +271,84 @@ function isNominationRecord(value: unknown): value is NominationRecord {
     && isSeat(value.candidateSeat);
 }
 
+function roleCounts(players: Player[], deck: Role[]) {
+  return [...players.map((player) => player.role), ...deck].reduce<Record<Role, number>>((counts, role) => {
+    if (role !== null) counts[role] += 1;
+    return counts;
+  }, { Мирный: 0, Мафия: 0, Дон: 0, Шериф: 0 });
+}
+
+function hasExactRoleCounts(players: Player[], deck: Role[] = []) {
+  const counts = roleCounts(players, deck);
+  return (Object.keys(roleLimits) as Role[]).every((role) => counts[role] === roleLimits[role]);
+}
+
+function hasAtMostRoleCounts(players: Player[]) {
+  const counts = roleCounts(players, []);
+  return (Object.keys(roleLimits) as Role[]).every((role) => counts[role] <= roleLimits[role]);
+}
+
+function isDealStateCompatible(snapshot: GameSnapshot) {
+  const {
+    players,
+    stage,
+    dealMethod,
+    dealIndex,
+    appRoleDeck,
+    selectedAppCardIndex,
+    appDealHistory,
+  } = snapshot;
+  const assignedCount = players.filter((player) => player.role !== null).length;
+  const rolesBeforeDealIndex = players.slice(0, dealIndex).every((player) => player.role !== null);
+  const rolesAfterDealIndex = players.slice(dealIndex).every((player) => player.role === null);
+  const appHistoryIsSequential = appDealHistory.every((entry, index) => (
+    entry.playerIndex === index
+    && players[index]?.role === entry.role
+  ));
+  const appHistoryCardIndexesAreUnique = new Set(appDealHistory.map((entry) => entry.cardIndex)).size === appDealHistory.length;
+
+  if (stage === "dealChoice") {
+    return dealMethod === null
+      && dealIndex === 0
+      && appRoleDeck.length === 0
+      && selectedAppCardIndex === null
+      && appDealHistory.length === 0
+      && assignedCount === 0;
+  }
+
+  if (stage === "appDeal") {
+    return dealMethod === "app"
+      && appRoleDeck.length > 0
+      && appDealHistory.length === dealIndex
+      && appDealHistory.length < 10
+      && rolesBeforeDealIndex
+      && rolesAfterDealIndex
+      && appHistoryIsSequential
+      && appHistoryCardIndexesAreUnique
+      && hasExactRoleCounts(players, appRoleDeck);
+  }
+
+  if (stage === "manualDeal") {
+    return dealMethod === "cards"
+      && appRoleDeck.length === 0
+      && selectedAppCardIndex === null
+      && appDealHistory.length === 0
+      && assignedCount === dealIndex
+      && rolesBeforeDealIndex
+      && rolesAfterDealIndex
+      && hasAtMostRoleCounts(players);
+  }
+
+  const completedDeal = dealMethod !== null
+    && appRoleDeck.length === 0
+    && selectedAppCardIndex === null
+    && (dealMethod === "app" ? appDealHistory.length === 10 : appDealHistory.length === 0)
+    && assignedCount === 10
+    && hasExactRoleCounts(players);
+  if (stage === "dealReady") return completedDeal && dealIndex === 9;
+  return completedDeal;
+}
+
 export function isGameSnapshot(value: unknown): value is GameSnapshot {
   if (!isRecord(value)
     || !isPlayerList(value.players)
@@ -315,11 +395,17 @@ export function isGameSnapshot(value: unknown): value is GameSnapshot {
     || !Array.isArray(value.eventLog)
     || !value.eventLog.every((entry) => typeof entry === "string")) return false;
 
-  return value.selectedAppCardIndex === null || value.selectedAppCardIndex < value.appRoleDeck.length;
+  const snapshot = value as unknown as GameSnapshot;
+  return (snapshot.selectedAppCardIndex === null || snapshot.selectedAppCardIndex < snapshot.appRoleDeck.length)
+    && (snapshot.stage === "appDeal" || snapshot.selectedAppCardIndex === null)
+    && isDealStateCompatible(snapshot);
 }
 
 function isUndoEntry(value: unknown): value is UndoEntry {
-  return isRecord(value) && typeof value.label === "string" && isGameSnapshot(value.snapshot);
+  return isRecord(value)
+    && typeof value.label === "string"
+    && isGameSnapshot(value.snapshot)
+    && (value.deadlineAt === undefined || value.deadlineAt === null || isFiniteNumber(value.deadlineAt));
 }
 
 function isPersistedGameState(value: unknown): value is PersistedGameState {
@@ -361,22 +447,36 @@ export function selectNewestGameState(
 }
 
 export function resumeGameState(state: PersistedGameState, now: number): PersistedGameState {
+  const safeNow = Number.isFinite(now) ? now : state.savedAt;
   const privateSnapshot: GameSnapshot = {
     ...state.snapshot,
     selectedAppCardIndex: null,
     masterSummaryVisible: false,
   };
+  const resumedHistory = state.history.map((entry) => {
+    if (!entry.snapshot.running) return entry;
+    if (entry.deadlineAt === undefined || entry.deadlineAt === null) {
+      return { ...entry, deadlineAt: null, snapshot: { ...entry.snapshot, running: false } };
+    }
+    const seconds = Math.max(0, Math.ceil((entry.deadlineAt - safeNow) / 1000));
+    return {
+      ...entry,
+      deadlineAt: seconds > 0 ? entry.deadlineAt : null,
+      snapshot: { ...entry.snapshot, seconds, running: seconds > 0 },
+    };
+  });
   if (!privateSnapshot.running || state.deadlineAt === null) {
-    return { ...state, snapshot: privateSnapshot };
+    return { ...state, snapshot: privateSnapshot, history: resumedHistory };
   }
-  const safeNow = Number.isFinite(now) ? now : state.savedAt;
   const seconds = Math.max(0, Math.ceil((state.deadlineAt - safeNow) / 1000));
   return {
     ...state,
+    deadlineAt: seconds > 0 ? state.deadlineAt : null,
     snapshot: {
       ...privateSnapshot,
       seconds,
       running: seconds > 0,
     },
+    history: resumedHistory,
   };
 }

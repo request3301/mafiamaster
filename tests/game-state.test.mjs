@@ -10,10 +10,11 @@ import {
 } from "../app/game-state.ts";
 
 function makePlayers() {
+  const roles = ["Мирный", "Мирный", "Мирный", "Мирный", "Мирный", "Мирный", "Мафия", "Мафия", "Дон", "Шериф"];
   return Array.from({ length: 10 }, (_, index) => ({
     seat: index + 1,
     name: `Игрок ${index + 1}`,
-    role: null,
+    role: roles[index],
     fouls: 0,
     yellowCards: 0,
     shortSpeechPending: false,
@@ -93,6 +94,10 @@ test("invalid or incompatible saved state is ignored", () => {
     ...makeState(),
     snapshot: { ...makeSnapshot(), players: makePlayers().slice(1) },
   })), null);
+  assert.equal(parseGameState(JSON.stringify({
+    ...makeState(),
+    snapshot: makeSnapshot({ stage: "appDeal", dealMethod: "cards", appRoleDeck: [], appDealHistory: [] }),
+  })), null);
 });
 
 test("the newest valid storage copy wins", () => {
@@ -126,11 +131,16 @@ test("a paused timer keeps its saved value", () => {
 });
 
 test("role-reveal UI is closed when a saved game reopens", () => {
+  const roles = ["Мирный", "Мирный", "Мирный", "Мирный", "Мирный", "Мирный", "Мафия", "Мафия", "Дон"];
   const state = makeState({
     deadlineAt: null,
     snapshot: makeSnapshot({
       stage: "appDeal",
+      dealMethod: "app",
+      dealIndex: 9,
+      players: makePlayers().map((player, index) => ({ ...player, role: index < 9 ? roles[index] : null })),
       appRoleDeck: ["Шериф"],
+      appDealHistory: roles.map((role, index) => ({ playerIndex: index, cardIndex: index, role })),
       selectedAppCardIndex: 0,
       masterSummaryVisible: true,
       running: false,
@@ -141,4 +151,19 @@ test("role-reveal UI is closed when a saved game reopens", () => {
 
   assert.equal(resumed.snapshot.selectedAppCardIndex, null);
   assert.equal(resumed.snapshot.masterSummaryVisible, false);
+});
+
+test("undo history timers also account for time spent closed", () => {
+  const state = makeState({
+    history: [{
+      label: "речь",
+      deadlineAt: 9_000,
+      snapshot: makeSnapshot({ seconds: 8, running: true }),
+    }],
+  });
+  const resumed = resumeGameState(state, 7_500);
+
+  assert.equal(resumed.history[0].snapshot.seconds, 2);
+  assert.equal(resumed.history[0].snapshot.running, true);
+  assert.equal(resumed.history[0].deadlineAt, 9_000);
 });
